@@ -138,11 +138,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             }
         }
 
-        // Locked text advanced (cloud backends — update protected boundary)
+        // Locked text advanced (cloud backends — called on main thread)
         engine.onLockedTextAdvanced = { [weak self] lockedLen in
-            Task { @MainActor in
-                self?.lockedTextLength = lockedLen
-            }
+            self?.lockedTextLength = lockedLen
         }
 
         // Utterance complete callback - triggers batch refinement (if enabled, local backend only)
@@ -201,9 +199,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
 
         if STTBackend.current.returnsPunctuatedText {
-            // Cloud backend: don't type during speech.
-            // All typing happens in handleFinalTranscription (clean, all at once).
-            // Partials still flow through for orb/speech detection.
+            // Cloud backend: only type is_final segments (lockedTextLength matches).
+            // Interims flow through for orb/speech detection but aren't typed.
+            if partial.count <= lockedTextLength && partial.count > currentTypedText.count {
+                let newChars = String(partial.dropFirst(currentTypedText.count))
+                if !newChars.isEmpty {
+                    inputSimulator.typeString(newChars)
+                }
+                currentTypedText = partial
+            }
             return
         }
 

@@ -200,9 +200,8 @@ class TranscriptionEngine: ObservableObject {
                 self?.handleFinalTranscription(final)
             }
             provider.onLockedTextAdvanced = { [weak self] lockedLen in
-                DispatchQueue.main.async {
-                    self?.onLockedTextAdvanced?(lockedLen)
-                }
+                // Called on main thread from provider — pass through directly
+                self?.onLockedTextAdvanced?(lockedLen)
             }
 
             log("Starting STT provider...")

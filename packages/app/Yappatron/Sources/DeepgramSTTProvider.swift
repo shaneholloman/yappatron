@@ -42,7 +42,7 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
             URLQueryItem(name: "encoding", value: "linear16"),
             URLQueryItem(name: "sample_rate", value: "16000"),
             URLQueryItem(name: "channels", value: "1"),
-            URLQueryItem(name: "endpointing", value: "2200"),
+            URLQueryItem(name: "endpointing", value: "1500"),
             URLQueryItem(name: "smart_format", value: "true"),
         ]
 
@@ -239,16 +239,18 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
                     self?.onFinal?(utterance)
                 }
             } else {
-                log("DeepgramSTTProvider: Final segment (buffered): '\(currentUtterance)'")
-                // Emit as partial for speech detection (orb) but app won't type it
+                log("DeepgramSTTProvider: Final segment: '\(currentUtterance)'")
                 let partial = currentUtterance
+                let lockedLen = partial.count
                 DispatchQueue.main.async { [weak self] in
+                    self?.onLockedTextAdvanced?(lockedLen)
                     self?.onPartial?(partial)
                 }
                 scheduleEOUTimer()
             }
         } else {
-            // Emit interim for speech detection (orb) but app won't type it
+            // Send interims for speech detection (orb) — app uses lockedTextLength
+            // to distinguish these from is_final segments and won't type them
             let fullText = currentUtterance.isEmpty ? transcript : "\(currentUtterance) \(transcript)"
             DispatchQueue.main.async { [weak self] in
                 self?.onPartial?(fullText)
