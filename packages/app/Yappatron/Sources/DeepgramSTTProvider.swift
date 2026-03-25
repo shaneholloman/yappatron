@@ -231,6 +231,8 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
                     self?.onFinal?(utterance)
                 }
             } else {
+                // Emit is_final segments as partials — these only append, never revise,
+                // so the diff algorithm won't backspace. Clean forward-only text growth.
                 log("DeepgramSTTProvider: Final segment: '\(currentUtterance)'")
                 let partial = currentUtterance
                 DispatchQueue.main.async { [weak self] in
@@ -239,11 +241,9 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
                 scheduleEOUTimer()
             }
         } else {
-            let partialText = currentUtterance.isEmpty ? transcript : "\(currentUtterance) \(transcript)"
-            log("DeepgramSTTProvider: Partial: '\(partialText)'")
-            DispatchQueue.main.async { [weak self] in
-                self?.onPartial?(partialText)
-            }
+            // Skip interim results entirely — they cause aggressive backspacing
+            // because Deepgram frequently revises them. is_final segments arrive
+            // fast enough (~300ms) that skipping interims feels instant.
             scheduleEOUTimer()
         }
     }
