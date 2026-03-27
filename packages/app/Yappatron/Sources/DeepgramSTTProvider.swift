@@ -17,7 +17,7 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
     private var lastInterimText = ""       // Last interim shown (for safe replacement)
     private var lastEmittedPartial = ""    // Last text sent to onPartial (for append-only check)
     private var eouTimer: Task<Void, Never>?
-    private let eouDebounceMs: UInt64 = 2500
+    private let eouDebounceMs: UInt64 = 3000
 
     var onPartial: ((String) -> Void)?
     var onFinal: ((String) -> Void)?
@@ -42,7 +42,7 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
             URLQueryItem(name: "encoding", value: "linear16"),
             URLQueryItem(name: "sample_rate", value: "16000"),
             URLQueryItem(name: "channels", value: "1"),
-            URLQueryItem(name: "endpointing", value: "1800"),
+            URLQueryItem(name: "endpointing", value: "2350"),
             URLQueryItem(name: "smart_format", value: "true"),
         ]
 
