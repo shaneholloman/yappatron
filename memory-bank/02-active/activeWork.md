@@ -1,10 +1,15 @@
 # Active Work
 
-**Last Updated:** 2026-03-24
+**Last Updated:** 2026-04-07
+
+## Current Focus
+
+**TOP PRIORITY: Voice isolation in noisy environments** (issue #1)
+Starting next session. Goal: only transcribe the primary speaker (the user), filter out background voices in cafes/hallways/meetings. Multiple approaches to evaluate — see nextUp.md for details.
 
 ## Current State
 
-Deepgram Nova-3 cloud STT is live and working well. Text streams in as clean sentence-level chunks during speech (is_final segments only — no backspacing). Orb animates from interims. Current UX is strong but we want to improve to real-time character-level streaming in a future session.
+Deepgram Nova-3 cloud STT is live and working well. Text streams in as clean sentence-level chunks during speech (is_final segments only — no backspacing). Orb animates from interims. EOU timing tuned to endpointing=2750ms server-side, 3500ms local fallback. Current UX is strong but the noisy-environment problem (picking up background voices) is the next major friction point to solve.
 
 ### Key UX Features
 - **☁️ Deepgram Nova-3 cloud STT**: Punctuation, smart formatting, sentence-level streaming

@@ -1,19 +1,38 @@
 # Next Up
 
-**Last Updated:** 2026-03-24
+**Last Updated:** 2026-04-07
 
-## Next Priority
+## TOP PRIORITY (next session)
+
+**Voice isolation in noisy environments** — P0
+- GitHub issue: https://github.com/alosec/yappatron/issues/1
+- Problem: In cafes/hallways/meetings, Yappatron picks up background voices and pollutes the user's dictation
+- Goal: Only transcribe the primary speaker (the user), filter out everyone else
+- Approaches to evaluate:
+  1. Speaker enrollment + voice print matching (local model: pyannote, SpeechBrain ECAPA-TDNN)
+  2. Deepgram diarization + filter by speaker ID
+  3. Apple's Voice Processing audio unit (AVAudioEngine built-in)
+  4. Hybrid: VAD + speaker verification per chunk
+- Open questions: enrollment vs auto-detect? Strictness? Toggle on/off?
+- Pairs well with future diarization/meeting-mode features
+
+## Other Priorities
 
 1. **Real-time character-level streaming** — P1
    - Currently text appears in sentence-level chunks (is_final segments only)
    - Goal: character-by-character streaming while speaking
    - Backspacing approach tried extensively — doesn't work with Deepgram's interim revisions
    - Ideas: stable prefix of interims, word-level confidence, hybrid approach
-   - This is the #1 UX improvement to chase
 
-2. **Hot-swap backends without restart** — P2
+2. **Speaker diarization for meeting mode** — P2
+   - Add `diarization=true` to Deepgram params
+   - Format output with speaker labels (Alex: ..., Speaker 2: ...)
+   - Voice trigger for naming ("Hey Yappatron, this is Alex")
+   - Different output target than dictation (file/window vs keystroke sim)
 
-3. **Add Soniox as third backend** — P3
+3. **Hot-swap backends without restart** — P3
+
+4. **Add Soniox as third backend** — P3
    - $0.12/hr — long-term cost alternative after Deepgram free credits expire
 
 ## Monitoring
