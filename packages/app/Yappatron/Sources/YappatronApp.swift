@@ -641,6 +641,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         updateOverlayStatus()
         updateStatusIcon()
 
+        try? await Task.sleep(nanoseconds: 120_000_000)
         await engine.finishCurrentUtterance()
 
         updateOverlayStatus()
