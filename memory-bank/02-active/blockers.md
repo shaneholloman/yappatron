@@ -1,10 +1,23 @@
 # Blockers
 
-**Last Updated:** 2026-01-09 14:45 UTC
+**Last Updated:** 2026-05-02
 
 ## Active Blockers
 
-None currently - monitoring for regressions.
+### iPhone First-Run Transcription — P0
+- **Problem:** The installed iPhone app currently depends on a Deepgram API key to transcribe, and the user does not want to create/fetch one just to test the mobile spike.
+- **Decision direction:** Spike local/on-device ASR next, preferably reusing FluidAudio/Parakeet if viable on iOS.
+- **Why it matters:** The app now launches on iPhone, so transcription itself is the next proof point.
+
+### iOS Keyboard Enablement — P1
+- **Problem:** The keyboard extension is installed with the app, but the user still needs to enable it in iOS settings and allow Full Access before type-anywhere insertion can be tested.
+- **Path:** Settings > General > Keyboard > Keyboards > Add New Keyboard > Yappatron Keyboard, then enable Allow Full Access.
+- **Tradeoff:** The free Personal Team build uses a Yappatron-tagged `UIPasteboard` bridge instead of App Groups. This is less clean than App Groups but avoids paid provisioning capabilities.
+
+### Normal Xcode Run Destination — P2
+- **Problem:** Full Xcode Run still wanted the iOS 26.4 platform/runtime component. The ASAP install succeeded by using a CLI build that excluded `Assets.xcassets`.
+- **Path:** Finish Xcode's iOS platform/runtime install later if normal Xcode Run, simulator builds, and app icon asset compilation matter.
+- **Current workaround:** Signed device build/install works from CLI with build overrides and free Personal Team signing.
 
 ## Resolved
 

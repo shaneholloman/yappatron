@@ -18,6 +18,8 @@ build/
 *.xcodeproj/
 !packages/ios/YappatronIOS/YappatronIOS.xcodeproj/
 !packages/ios/YappatronIOS/YappatronIOS.xcodeproj/**
+packages/ios/YappatronIOS/YappatronIOS.xcodeproj/xcuserdata/
+packages/ios/YappatronIOS/YappatronIOS.xcodeproj/project.xcworkspace/
 *.xcworkspace/
 DerivedData/
 

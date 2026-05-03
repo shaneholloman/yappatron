@@ -1,10 +1,22 @@
 # Next Up
 
-**Last Updated:** 2026-04-07
+**Last Updated:** 2026-05-02
 
 ## TOP PRIORITY (next session)
 
-**Voice isolation in noisy environments** — P0
+**iPhone local/on-device ASR spike** — P0
+- Current state: Yappatron is installed and launches on a connected test iPhone via free Personal Team signing.
+- Problem: The iOS app currently expects a Deepgram API key; user does not want to fetch/create one just to test the mobile spike.
+- Goal: Get an on-device transcription path working in the iPhone app ASAP.
+- First options:
+  1. Reuse existing FluidAudio/Parakeet local stack on iOS if the package/model supports iPhone/Core ML cleanly.
+  2. If FluidAudio integration is too heavy, create a minimal local-model proof-of-life target or fixture to validate model loading/audio pipeline.
+  3. Keep Deepgram as an optional backend, not the first-test blocker.
+- Validation: record on iPhone, see transcript appear, then enable keyboard and insert transcript into another app via the Yappatron keyboard.
+
+## Other Priorities
+
+1. **Voice isolation in noisy environments** — P1
 - GitHub issue: https://github.com/alosec/yappatron/issues/1
 - Problem: In cafes/hallways/meetings, Yappatron picks up background voices and pollutes the user's dictation
 - Goal: Only transcribe the primary speaker (the user), filter out everyone else
@@ -16,23 +28,31 @@
 - Open questions: enrollment vs auto-detect? Strictness? Toggle on/off?
 - Pairs well with future diarization/meeting-mode features
 
-## Other Priorities
+2. **Enable/test iOS type-anywhere keyboard flow** — P1
+   - On iPhone: Settings > General > Keyboard > Keyboards > add Yappatron Keyboard
+   - Turn on Allow Full Access so the keyboard can read the Yappatron-tagged pasteboard item
+   - Test insertion in Notes/Messages/Claude/etc.
+   - Note: third-party keyboards are unavailable in secure text fields and some restricted inputs
 
-1. **Real-time character-level streaming** — P1
+3. **Normal Xcode/iOS platform completion** — P2
+   - Current ASAP install bypassed `Assets.xcassets` at build time because `actool` complained about missing simulator runtimes.
+   - Finish Xcode's iOS 26.4 platform/runtime component later so normal Xcode Run uses app icons and standard destinations.
+
+4. **Real-time character-level streaming** — P2
    - Currently text appears in sentence-level chunks (is_final segments only)
    - Goal: character-by-character streaming while speaking
    - Backspacing approach tried extensively — doesn't work with Deepgram's interim revisions
    - Ideas: stable prefix of interims, word-level confidence, hybrid approach
 
-2. **Speaker diarization for meeting mode** — P2
+5. **Speaker diarization for meeting mode** — P3
    - Add `diarization=true` to Deepgram params
    - Format output with speaker labels (Alex: ..., Speaker 2: ...)
    - Voice trigger for naming ("Hey Yappatron, this is Alex")
    - Different output target than dictation (file/window vs keystroke sim)
 
-3. **Hot-swap backends without restart** — P3
+6. **Hot-swap backends without restart** — P3
 
-4. **Add Soniox as third backend** — P3
+7. **Add Soniox as third backend** — P3
    - $0.12/hr — long-term cost alternative after Deepgram free credits expire
 
 ## Monitoring
@@ -56,6 +76,9 @@
 - The right streaming architecture: is_final only for typing, interims for speech detection
 
 ## Recently Completed
+- ✓ **iPhone app installed and launched** (2026-05-02) — Free Xcode Personal Team, Developer Mode, trusted profile
+- ✓ **Free-device iOS bridge** (2026-05-02) — Removed App Group entitlement, replaced with Yappatron-tagged local pasteboard item
+- ✓ **iOS custom keyboard extension scaffold** (2026-05-02) — Inserts latest transcript with `textDocumentProxy.insertText`
 - ✓ **Forward-only chunk streaming** (2026-03-24) — is_final segments typed, interims for orb only
 - ✓ **EOU timing tuned** (2026-03-24) — Multiple rounds of tuning, landed on 1500ms/2500ms
 - ✓ **Deepgram Nova-3 cloud STT** (2026-03-24) — Full WebSocket integration
