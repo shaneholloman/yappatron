@@ -77,6 +77,7 @@ Enable "Auto-Send with Enter" for completely hands-free operation with:
 yappatron/
 ├── packages/
 │   ├── app/Yappatron/     # Swift macOS app (active)
+│   ├── ios/YappatronIOS/  # SwiftUI iOS app + keyboard extension
 │   ├── core/              # Python prototype (dormant)
 │   └── website/           # Astro landing page
 ├── memory-bank/           # Development documentation
@@ -109,6 +110,18 @@ swift build
 # Run
 .build/debug/Yappatron
 ```
+
+### iPhone App
+
+The iOS companion lives at `packages/ios/YappatronIOS`. It includes a SwiftUI recorder app and a custom keyboard extension that inserts the latest synced transcript into the active iOS text field.
+
+Full Xcode is required:
+
+```bash
+open packages/ios/YappatronIOS/YappatronIOS.xcodeproj
+```
+
+See `packages/ios/YappatronIOS/README.md` for signing, App Group, device install, and TestFlight steps.
 
 ## License
 

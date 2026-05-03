@@ -16,6 +16,8 @@ build/
 .build/
 .swiftpm/
 *.xcodeproj/
+!packages/ios/YappatronIOS/YappatronIOS.xcodeproj/
+!packages/ios/YappatronIOS/YappatronIOS.xcodeproj/**
 *.xcworkspace/
 DerivedData/
 
