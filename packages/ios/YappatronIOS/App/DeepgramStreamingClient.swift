@@ -161,8 +161,10 @@ final class DeepgramStreamingClient: NSObject {
                     }
 
                     self.isConnected = false
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onError?(error.localizedDescription)
+                    let message = error.localizedDescription
+                    let onError = self.onError
+                    DispatchQueue.main.async {
+                        onError?(message)
                     }
                     break
                 }

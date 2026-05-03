@@ -121,7 +121,7 @@ Full Xcode is required:
 open packages/ios/YappatronIOS/YappatronIOS.xcodeproj
 ```
 
-See `packages/ios/YappatronIOS/README.md` for signing, App Group, device install, and TestFlight steps.
+See `packages/ios/YappatronIOS/README.md` for signing, device install, and TestFlight steps.
 
 ## License
 

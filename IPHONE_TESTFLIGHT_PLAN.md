@@ -14,8 +14,8 @@ Yappatron now has both the existing macOS Swift Package app and a new iOS projec
 - iOS project: `packages/ios/YappatronIOS/YappatronIOS.xcodeproj`
 - iOS app target: `YappatronIOS`
 - iOS keyboard extension target: `YappatronKeyboard`
-- iOS App Group bridge: `group.com.yappatron.shared`
-- iOS MVP behavior: the containing app records/transcribes with Deepgram, then the keyboard extension inserts the latest synced transcript into the active text field
+- iOS free-device bridge: a Yappatron-tagged local pasteboard item
+- iOS MVP behavior: the containing app records/transcribes with Deepgram, then the keyboard extension inserts the latest transcript into the active text field
 
 This machine currently has Swift command-line tools, but not full Xcode selected:
 
@@ -40,7 +40,7 @@ The iOS implementation follows the industry-standard workaround used by dictatio
 
 - A foreground containing app owns microphone permission, audio session setup, Deepgram streaming, and transcript storage.
 - The containing app declares background audio mode so a live recording session can continue while the user switches apps, subject to iOS suspension/termination behavior.
-- A custom keyboard extension reads the latest transcript from an App Group and inserts it into the current text field with `textDocumentProxy.insertText`.
+- A custom keyboard extension reads the latest Yappatron-tagged pasteboard transcript and inserts it into the current text field with `textDocumentProxy.insertText`.
 - The keyboard does not access the microphone and does not need network access for the current MVP.
 - The app includes an optional one-shot auto-insert behavior when the keyboard opens with a newly updated transcript.
 
@@ -64,7 +64,7 @@ Current first version:
 - Copy transcript button
 - Share sheet
 - Custom keyboard extension for text insertion
-- App Group transcript bridge
+- Local pasteboard transcript bridge for free Personal Team signing
 - Deepgram backend first, because it avoids local model download/app size issues
 - Local FluidAudio/Parakeet as a second pass once the iOS shell is running
 
@@ -79,6 +79,7 @@ Cons:
 
 - The user still has to start/keep alive the containing app recording session
 - iOS may suspend or terminate background recording
+- The latest transcript is placed on the local system pasteboard so the keyboard can read it without paid App Group provisioning
 - Third-party keyboards are unavailable in secure text fields and some restricted inputs
 
 ### Option B: TestFlight iOS MVP
@@ -149,7 +150,7 @@ This is not a TestFlight app and should only be used as a throwaway prototype if
 
 3. Configure signing.
 
-   Set the development team for both targets, then enable/register `group.com.yappatron.shared` for both `YappatronIOS` and `YappatronKeyboard`.
+   Sign into Xcode with a normal Apple Account, then set the Personal Team for both targets. Free Personal Team profiles expire periodically, so rebuild/reinstall when iOS stops launching the app.
 
 4. Run directly on your iPhone from Xcode.
 
@@ -173,11 +174,11 @@ This is not a TestFlight app and should only be used as a throwaway prototype if
 
 ## Immediate Blockers
 
-- Full Xcode is not installed/selected on this machine.
-- I do not have access to an Apple Developer Program team, App Store Connect, signing certificates, or a connected iPhone from this environment.
+- Full Xcode is installed and selected on this machine.
+- Xcode can use a free Personal Team for direct personal-device testing, but it cannot upload to TestFlight/App Store without Apple Developer Program membership.
 - iOS cannot support the current macOS-style systemwide keystroke injection behavior.
-- The App Group and bundle IDs must be registered under a real Apple team before device/TestFlight signing can succeed.
+- The connected iPhone must have Developer Mode enabled before Xcode can mount the developer disk image and install a debug build.
 
 ## Next Concrete Build Task
 
-Install/select full Xcode, open `packages/ios/YappatronIOS/YappatronIOS.xcodeproj`, configure signing/App Group, and run the app on a physical iPhone.
+Enable Developer Mode on the connected iPhone, configure free Personal Team signing in Xcode, and run the app on the physical iPhone.

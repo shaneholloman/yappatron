@@ -84,7 +84,7 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func refreshTranscript() {
-        latestTranscript = transcriptStore.latestTranscript()
+        latestTranscript = transcriptStore.latestTranscriptForKeyboard()
         let text = latestTranscript.text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         transcriptLabel.text = text.isEmpty ? "Open Yappatron to record." : text

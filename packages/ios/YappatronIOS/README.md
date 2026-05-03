@@ -9,10 +9,10 @@ Native iPhone companion app for Yappatron dictation.
   - Deepgram Nova-3 realtime WebSocket transcription
   - API key storage in Keychain
   - Background audio mode declaration
-  - Latest transcript sync through an App Group
+  - Latest transcript handoff through a Yappatron-tagged pasteboard item
   - Copy and share actions
 - `YappatronKeyboard` custom keyboard extension target
-  - Reads the latest synced transcript
+  - Reads the latest Yappatron-tagged pasteboard transcript
   - Inserts text into the active iOS text field with `textDocumentProxy.insertText`
   - Optional one-shot auto-insert when the keyboard opens
 
@@ -30,9 +30,7 @@ The app declares `UIBackgroundModes = audio`, which is the same family of workar
 
 - Full Xcode installed and selected
 - iOS 17+ device or simulator
-- Apple signing team for device builds
-- App Group capability for both targets:
-  - `group.com.yappatron.shared`
+- Apple Account in Xcode for free Personal Team device builds
 - Bundle IDs:
   - App: `com.yappatron.ios`
   - Keyboard: `com.yappatron.ios.keyboard`
@@ -48,11 +46,9 @@ open packages/ios/YappatronIOS/YappatronIOS.xcodeproj
 In Xcode:
 
 1. Select the `YappatronIOS` project.
-2. Set your Team on both `YappatronIOS` and `YappatronKeyboard`.
-3. Add the App Groups capability to both targets.
-4. Register and enable `group.com.yappatron.shared`.
-5. Run `YappatronIOS` on an iPhone.
-6. On iPhone, enable the keyboard in Settings > General > Keyboard > Keyboards, then turn on Allow Full Access for Yappatron Keyboard.
+2. Set your Personal Team on both `YappatronIOS` and `YappatronKeyboard`.
+3. Run `YappatronIOS` on an iPhone.
+4. On iPhone, enable the keyboard in Settings > General > Keyboard > Keyboards, then turn on Allow Full Access for Yappatron Keyboard.
 
 ## TestFlight
 

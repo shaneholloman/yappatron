@@ -86,7 +86,7 @@ final class DictationViewModel: ObservableObject {
         do {
             try KeychainStore.saveAPIKey(apiKey)
             transcript = ""
-            sharedStore.saveTranscript("")
+            sharedStore.clearTranscript(removePasteboard: false)
 
             status = .connecting
 
@@ -172,7 +172,7 @@ final class DictationViewModel: ObservableObject {
             return
         }
 
-        UIPasteboard.general.string = trimmedTranscript
+        sharedStore.saveTranscript(trimmedTranscript)
         copiedConfirmationVisible = true
 
         Task {
@@ -185,7 +185,7 @@ final class DictationViewModel: ObservableObject {
 
     func clearTranscript() {
         transcript = ""
-        sharedStore.saveTranscript("")
+        sharedStore.clearTranscript(removePasteboard: true)
     }
 
     private func receiveTranscript(_ text: String) {
