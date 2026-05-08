@@ -32,7 +32,7 @@ actor HybridDiarizer {
 
     /// Minimum audio duration (seconds) to bother running embedding on.
     /// Below this, embeddings are too noisy to trust — keep Deepgram's ID.
-    var minRunSeconds: Float = 0.6
+    var minRunSeconds: Float = 0.3
 
     private let sampleRate: Float = 16000
 
