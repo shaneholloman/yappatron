@@ -28,6 +28,8 @@ protocol STTProvider: AnyObject {
     var onLockedTextAdvanced: ((Int) -> Void)? { get set }
     /// Called on is_final segments when the provider can attribute words to speakers.
     /// Runs are pre-grouped: consecutive same-speaker words are merged into one entry.
+    /// Each run includes the audio time bounds (seconds since stream open) so the
+    /// engine can slice audio for embedding-based override.
     /// Providers without diarization leave this nil.
-    var onDiarizedFinal: (([(speakerId: Int, text: String)]) -> Void)? { get set }
+    var onDiarizedFinal: (([(speakerId: Int, text: String, startSec: Double, endSec: Double)]) -> Void)? { get set }
 }

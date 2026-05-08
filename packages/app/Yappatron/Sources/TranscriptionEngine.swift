@@ -122,6 +122,53 @@ actor AudioChunkBuffer {
     }
 }
 
+/// Rolling audio buffer indexed by stream-relative time (seconds since stream
+/// open). Used by the hybrid diarizer to slice per-run audio matching Deepgram's
+/// word-level start/end timestamps. Capped at ~120 seconds to bound memory.
+actor StreamAudioBuffer {
+    private var samples: [Float] = []
+    private let sampleRate: Int = 16000
+    private let maxSeconds: Int = 120
+
+    /// Append samples from the latest audio buffer. Must be called in the same
+    /// order as audio was captured.
+    func append(_ buffer: AVAudioPCMBuffer) {
+        guard let channelData = buffer.floatChannelData else { return }
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return }
+        let chunk = Array(UnsafeBufferPointer(start: channelData[0], count: frameLength))
+        samples.append(contentsOf: chunk)
+        // Drop the front if we exceed the cap, keeping a sliding window.
+        let maxSamples = sampleRate * maxSeconds
+        if samples.count > maxSamples {
+            let drop = samples.count - maxSamples
+            samples.removeFirst(drop)
+            droppedSamples += drop
+        }
+    }
+
+    /// Number of samples that have been dropped from the front. Used to
+    /// translate Deepgram's stream-absolute timestamps into our buffer indices.
+    private var droppedSamples: Int = 0
+
+    /// Slice samples between `startSec` and `endSec` (stream-relative). Returns
+    /// empty array if the requested window is older than what we still hold.
+    func slice(startSec: Double, endSec: Double) -> [Float] {
+        guard endSec > startSec else { return [] }
+        let absoluteStart = Int(startSec * Double(sampleRate))
+        let absoluteEnd = Int(endSec * Double(sampleRate))
+        let localStart = absoluteStart - droppedSamples
+        let localEnd = absoluteEnd - droppedSamples
+        guard localStart >= 0, localEnd <= samples.count, localEnd > localStart else { return [] }
+        return Array(samples[localStart..<localEnd])
+    }
+
+    func reset() {
+        samples.removeAll()
+        droppedSamples = 0
+    }
+}
+
 /// Handles real-time streaming speech-to-text using pluggable STT backends
 class TranscriptionEngine: ObservableObject {
 
@@ -155,12 +202,25 @@ class TranscriptionEngine: ObservableObject {
     // Track current partial for diffing
     private var currentPartial: String = ""
 
-    // Last speaker ID emitted via onTranscription, so we only insert "[Name] "
-    // when the speaker actually changes across utterances.
-    private var lastLabeledSpeakerId: Int?
+    // Last speaker label emitted via onTranscription, so we only insert a fresh
+    // label/line-break when the displayed speaker actually changes across
+    // utterances. Tracking by label string instead of integer ID lets the hybrid
+    // override seamlessly bridge speakers that Deepgram split into multiple IDs.
+    private var lastLabeledLabel: String?
     // Most recent diarized runs for the current utterance, captured in onDiarizedFinal
-    // and consumed by handleFinalTranscription to format the typed string.
-    private var pendingDiarizedRuns: [(speakerId: Int, text: String)]?
+    // and consumed by handleFinalTranscription to format the typed string. The
+    // displayName field is non-nil when the hybrid diarizer overrode Deepgram's ID
+    // with a stronger embedding match against an enrolled speaker.
+    private var pendingDiarizedRuns: [(speakerId: Int, text: String, displayName: String?)]?
+
+    // Hybrid diarization (local embedding override of Deepgram's IDs)
+    private let speakerEmbedder = SpeakerEmbedder()
+    /// Exposed so the enrollment UI can share the same loaded embedder instance.
+    var publicSpeakerEmbedder: SpeakerEmbedder { speakerEmbedder }
+    private lazy var hybridDiarizer = HybridDiarizer(embedder: speakerEmbedder)
+    // Long-lived audio buffer indexed by stream-relative time (seconds since
+    // STT provider start). Used to slice per-run audio for embedding override.
+    private let streamAudioBuffer = StreamAudioBuffer()
 
     // Audio buffer queue - prevents race conditions without blocking audio thread
     private let audioBufferQueue = AudioBufferQueue()
@@ -291,9 +351,35 @@ class TranscriptionEngine: ObservableObject {
         }
     }
 
-    private func handleDiarizedFinal(_ runs: [(speakerId: Int, text: String)]) {
-        pendingDiarizedRuns = runs
+    private func handleDiarizedFinal(_ runs: [(speakerId: Int, text: String, startSec: Double, endSec: Double)]) {
         for run in runs { SpeakerLabelMap.recordSeen(run.speakerId) }
+
+        // Default: store with no override. The hybrid pass below replaces this if
+        // we have enrolled speakers and the embedding match is strong enough.
+        pendingDiarizedRuns = runs.map { (speakerId: $0.speakerId, text: $0.text, displayName: Optional<String>.none) }
+
+        let enrolled = SpeakerRegistry.loadAll()
+        guard !enrolled.isEmpty else { return }
+
+        // Slice audio per run, run hybrid override asynchronously, and update
+        // pendingDiarizedRuns before handleFinalTranscription consumes them.
+        let runsWithTiming = runs
+        Task { [weak self] in
+            guard let self = self else { return }
+            var withAudio: [DiarizedRunWithAudio] = []
+            for run in runsWithTiming {
+                let samples = await self.streamAudioBuffer.slice(startSec: run.startSec, endSec: run.endSec)
+                withAudio.append(DiarizedRunWithAudio(
+                    deepgramSpeakerId: run.speakerId,
+                    text: run.text,
+                    samples: samples
+                ))
+            }
+            let overridden = await self.hybridDiarizer.override(runs: withAudio, enrolled: enrolled)
+            await MainActor.run {
+                self.pendingDiarizedRuns = overridden.map { (speakerId: $0.deepgramSpeakerId, text: $0.text, displayName: $0.enrolledName) }
+            }
+        }
     }
 
     /// Format the diarized runs into a single typed string with `[Name] ` prefixes.
@@ -303,27 +389,25 @@ class TranscriptionEngine: ObservableObject {
     /// On every speaker change (including the first run of an utterance, when a
     /// line break style is set), the configured `LineBreakStyle.separator` is
     /// inserted so terminals/editors get a real line break.
-    private func formatLabeled(_ runs: [(speakerId: Int, text: String)]) -> String {
+    private func formatLabeled(_ runs: [(speakerId: Int, text: String, displayName: String?)]) -> String {
         let style = SpeakerLabelMap.lineBreakStyle
         var output = ""
-        // Reset within-utterance tracking so the first run always emits a label.
-        var lastId: Int? = nil
+        // Within-utterance tracking by display name (override-aware) so consecutive
+        // same-person runs don't re-label even if Deepgram changed IDs mid-utterance.
+        var lastLabel: String? = nil
         var isFirstSegment = true
-        var leadSpeakerId: Int? = nil
         for run in runs {
             let trimmedRun = run.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmedRun.isEmpty else { continue }
-            if run.speakerId != lastId {
+            let label = run.displayName ?? SpeakerLabelMap.name(forSpeakerId: run.speakerId)
+            if label != lastLabel {
                 if !isFirstSegment {
-                    // Within-utterance speaker change — always insert separator.
                     output += style.separator
-                } else if style != .none && lastLabeledSpeakerId != nil {
-                    // Continuing a session: start this utterance on a new line.
+                } else if style != .none && lastLabeledLabel != nil {
                     output += style.separator
                 }
-                output += "[\(SpeakerLabelMap.name(forSpeakerId: run.speakerId))] \(trimmedRun)"
-                lastId = run.speakerId
-                if leadSpeakerId == nil { leadSpeakerId = run.speakerId }
+                output += "[\(label)] \(trimmedRun)"
+                lastLabel = label
             } else {
                 if !isFirstSegment {
                     output += " "
@@ -332,10 +416,8 @@ class TranscriptionEngine: ObservableObject {
             }
             isFirstSegment = false
         }
-        // Remember the *last* speaker of this utterance so cross-utterance line
-        // breaks know whether to fire (only fire if there was a previous speaker).
-        if let lastId = lastId {
-            lastLabeledSpeakerId = lastId
+        if let lastLabel = lastLabel {
+            lastLabeledLabel = lastLabel
         }
         return output
     }
@@ -543,6 +625,10 @@ class TranscriptionEngine: ObservableObject {
                         // This ensures we capture the complete utterance from the beginning,
                         // not just after isSpeaking flag is set (which happens after first partial arrives)
                         await self.audioChunkBuffer?.append(buffer)
+
+                        // Hybrid diarizer needs a long-lived stream-time-indexed buffer
+                        // so it can slice audio matching Deepgram's word-level timestamps.
+                        await self.streamAudioBuffer.append(buffer)
                     } catch {
                         log("STT process error: \(error.localizedDescription)")
                     }

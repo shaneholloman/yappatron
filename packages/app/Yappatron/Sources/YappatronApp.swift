@@ -407,6 +407,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             labelsItem.state = SpeakerLabelMap.enabled ? .on : .off
             menu.addItem(labelsItem)
 
+            // Enrolled speakers submenu (hybrid override layer)
+            let enrolledItem = NSMenuItem(title: "Enrolled Speakers (Hybrid)", action: nil, keyEquivalent: "")
+            let enrolledMenu = NSMenu()
+            let enrolledList = SpeakerRegistry.loadAll()
+            if enrolledList.isEmpty {
+                let placeholder = NSMenuItem(title: "(No enrolled speakers)", action: nil, keyEquivalent: "")
+                placeholder.isEnabled = false
+                enrolledMenu.addItem(placeholder)
+            } else {
+                for sp in enrolledList {
+                    let item = NSMenuItem(title: "Remove '\(sp.name)'", action: #selector(removeEnrolledSpeaker(_:)), keyEquivalent: "")
+                    item.representedObject = sp.id
+                    enrolledMenu.addItem(item)
+                }
+            }
+            enrolledMenu.addItem(NSMenuItem.separator())
+            enrolledMenu.addItem(NSMenuItem(title: "Enroll New Speaker…", action: #selector(enrollNewSpeaker), keyEquivalent: ""))
+            enrolledItem.submenu = enrolledMenu
+            menu.addItem(enrolledItem)
+
             // Line break style submenu
             let lineBreakItem = NSMenuItem(title: "Line Breaks Between Speakers", action: nil, keyEquivalent: "")
             let lineBreakMenu = NSMenu()
@@ -754,6 +774,42 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         guard let raw = sender.representedObject as? String,
               let style = LineBreakStyle(rawValue: raw) else { return }
         SpeakerLabelMap.lineBreakStyle = style
+    }
+
+    @objc func enrollNewSpeaker() {
+        // Pause active transcription so the enrollment recorder owns the mic.
+        let wasListening = engine.status == .listening
+        if wasListening {
+            engine.stopCapture()
+        }
+
+        let coordinator = EnrollSpeakerCoordinator()
+        coordinator.enroll(suggestedName: "", embedder: engine.publicSpeakerEmbedder) { [weak self] result in
+            DispatchQueue.main.async {
+                let alert = NSAlert()
+                switch result {
+                case .success(let speaker):
+                    alert.messageText = "Enrolled \(speaker.name)"
+                    alert.informativeText = "Voiceprint saved. Future utterances matching this voice will be labeled [\(speaker.name)] regardless of Deepgram's speaker ID."
+                    alert.alertStyle = .informational
+                case .failure(let err):
+                    alert.messageText = "Enrollment failed"
+                    alert.informativeText = err.localizedDescription
+                    alert.alertStyle = .warning
+                }
+                alert.addButton(withTitle: "OK")
+                alert.runModal()
+
+                if wasListening {
+                    self?.engine.startCapture()
+                }
+            }
+        }
+    }
+
+    @objc func removeEnrolledSpeaker(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        try? SpeakerRegistry.remove(id: id)
     }
 
     @objc func selectDictationMode(_ sender: NSMenuItem) {

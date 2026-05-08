@@ -19,6 +19,9 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
     /// Accumulated speaker-tagged runs across is_final segments within the current utterance.
     /// Consecutive entries with the same speakerId are merged.
     private var currentDiarizedRuns: [(speakerId: Int, text: String)] = []
+    /// Per-run audio time bounds (seconds since stream open), parallel to currentDiarizedRuns.
+    /// Used by the engine to slice audio for embedding-based override.
+    private var currentRunTimings: [(startSec: Double, endSec: Double)] = []
     private var eouTimer: Task<Void, Never>?
     private var finalizeContinuation: CheckedContinuation<String?, Never>?
     private var finalizeTimeoutTask: Task<Void, Never>?
@@ -27,7 +30,7 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
     var onPartial: ((String) -> Void)?
     var onFinal: ((String) -> Void)?
     var onLockedTextAdvanced: ((Int) -> Void)?
-    var onDiarizedFinal: (([(speakerId: Int, text: String)]) -> Void)?
+    var onDiarizedFinal: (([(speakerId: Int, text: String, startSec: Double, endSec: Double)]) -> Void)?
 
     init(apiKey: String) {
         self.apiKey = apiKey
@@ -150,12 +153,14 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
         let pending = currentUtterance
         currentUtterance = ""
         currentDiarizedRuns = []
+        currentRunTimings = []
         return pending.isEmpty ? nil : pending
     }
 
     func reset() async {
         currentUtterance = ""
         currentDiarizedRuns = []
+        currentRunTimings = []
         lastInterimText = ""
         lastEmittedPartial = ""
         eouTimer?.cancel()
@@ -317,9 +322,8 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
         guard !currentUtterance.isEmpty else { return }
 
         let utterance = currentUtterance
-        let runs = currentDiarizedRuns
+        let runs = takeRunsWithTimings()
         currentUtterance = ""
-        currentDiarizedRuns = []
         eouTimer?.cancel()
 
         log("DeepgramSTTProvider: UtteranceEnd: '\(utterance)' (\(runs.count) speaker runs)")
@@ -344,9 +348,8 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
             guard let self = self, !self.currentUtterance.isEmpty else { return }
 
             let utterance = self.currentUtterance
-            let runs = self.currentDiarizedRuns
+            let runs = self.takeRunsWithTimings()
             self.currentUtterance = ""
-            self.currentDiarizedRuns = []
 
             log("DeepgramSTTProvider: EOU timer fired: '\(utterance)' (\(runs.count) speaker runs)")
             DispatchQueue.main.async { [weak self] in
@@ -358,38 +361,61 @@ class DeepgramSTTProvider: STTProvider, @unchecked Sendable {
         }
     }
 
+    /// Drain currentDiarizedRuns + currentRunTimings into a single tuple list and clear both.
+    private func takeRunsWithTimings() -> [(speakerId: Int, text: String, startSec: Double, endSec: Double)] {
+        let count = min(currentDiarizedRuns.count, currentRunTimings.count)
+        var out: [(speakerId: Int, text: String, startSec: Double, endSec: Double)] = []
+        out.reserveCapacity(count)
+        for i in 0..<count {
+            let r = currentDiarizedRuns[i]
+            let t = currentRunTimings[i]
+            out.append((speakerId: r.speakerId, text: r.text, startSec: t.startSec, endSec: t.endSec))
+        }
+        currentDiarizedRuns = []
+        currentRunTimings = []
+        return out
+    }
+
     /// Group word-level speaker tags from a Results frame into runs of the same speaker
     /// and append to `currentDiarizedRuns`, merging the boundary if the previous run
-    /// already ended with the same speaker.
+    /// already ended with the same speaker. Also collects per-run audio time bounds
+    /// from the words' `start`/`end` fields (seconds since stream open).
     private func appendDiarizedRuns(from words: [[String: Any]]) {
-        var localRuns: [(speakerId: Int, text: String)] = []
+        struct LocalRun { var speakerId: Int; var text: String; var startSec: Double; var endSec: Double }
+        var localRuns: [LocalRun] = []
         for w in words {
             guard let punct = (w["punctuated_word"] as? String) ?? (w["word"] as? String),
                   !punct.isEmpty else { continue }
             let speakerId = w["speaker"] as? Int ?? 0
+            let start = (w["start"] as? Double) ?? 0
+            let end = (w["end"] as? Double) ?? start
             if var last = localRuns.last, last.speakerId == speakerId {
                 last.text += " " + punct
+                last.endSec = end
                 localRuns[localRuns.count - 1] = last
             } else {
-                localRuns.append((speakerId: speakerId, text: punct))
+                localRuns.append(LocalRun(speakerId: speakerId, text: punct, startSec: start, endSec: end))
             }
         }
         guard !localRuns.isEmpty else { return }
         for run in localRuns {
-            if var last = currentDiarizedRuns.last, last.speakerId == run.speakerId {
+            if var last = currentDiarizedRuns.last, last.speakerId == run.speakerId,
+               var lastTiming = currentRunTimings.last {
                 last.text += " " + run.text
+                lastTiming.endSec = run.endSec
                 currentDiarizedRuns[currentDiarizedRuns.count - 1] = last
+                currentRunTimings[currentRunTimings.count - 1] = lastTiming
             } else {
-                currentDiarizedRuns.append(run)
+                currentDiarizedRuns.append((speakerId: run.speakerId, text: run.text))
+                currentRunTimings.append((startSec: run.startSec, endSec: run.endSec))
             }
         }
     }
 
     private func takePendingUtterance() -> String? {
         let pending = currentUtterance
-        let pendingRuns = currentDiarizedRuns
+        let pendingRuns = takeRunsWithTimings()
         currentUtterance = ""
-        currentDiarizedRuns = []
         lastInterimText = ""
         lastEmittedPartial = ""
         eouTimer?.cancel()
