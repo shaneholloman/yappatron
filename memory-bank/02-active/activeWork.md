@@ -1,75 +1,94 @@
 # Active Work
 
-**Last Updated:** 2026-05-02
+**Last Updated:** 2026-05-08
 
 ## Current Focus
 
-**TOP PRIORITY: Test the installed iPhone app's local transcription path**
+**TOP PRIORITY: Input focus locking**
 
-The iPhone app is now installed and launched on a connected test iPhone via free Xcode Personal Team signing. It now has a Local mode that uses Apple's on-device Speech framework, so first-run testing no longer requires a Deepgram API key.
+Yappatron currently types into whatever app/field has focus at the moment a final lands. For multi-speaker / meeting-mode use, the user often wants the transcript to flow into a *specific* destination (e.g., a Claude Code chat) regardless of where the cursor moves during the conversation. Right now, alt-tabbing or clicking another window mid-conversation splits the transcript across destinations.
+
+Goal: a "lock onto this input" mode where the user designates a target text field (or window), and Yappatron continues typing there even if focus moves elsewhere.
+
+Open design questions (no decisions yet):
+- How does the user designate the target? Click-to-pick, hotkey-while-focused, menu listing recent inputs?
+- Do we re-acquire focus before typing each chunk (briefly steals focus, types, returns), or do we type using accessibility APIs that don't require focus?
+- What happens if the locked target disappears (window closed, app quit)? Pause? Fall back to dictation? Notify the user?
+- Should the lock survive across utterances only, or across an entire session?
+
+Initial sketch: enumerate distinct text inputs we've typed into (by app + window + field role) and present them in a menu as "lock to this input" options. Simplest possible MVP — we don't need click-to-pick for the first cut.
 
 ## Current State
 
-Mac app: Deepgram Nova-3 cloud STT is live and working well. Text streams in as clean sentence-level chunks during speech (is_final segments only — no backspacing). Orb animates from interims. EOU timing tuned to endpointing=2750ms server-side, 3500ms local fallback.
+### Mac app (main: 690f0e5)
 
-iPhone app: Native iOS project exists at `packages/ios/YappatronIOS`, with app target `YappatronIOS` and keyboard extension target `YappatronKeyboard`. It installs and launches on a physical iPhone. Current iOS transcription backends are Local (Apple on-device Speech, default) and Deepgram (optional).
+Speaker diarization shipped end-to-end with a hybrid architecture: Deepgram does word-level segmentation, local FluidAudio embeddings handle identity by matching against an enrolled-speaker registry. The override layer eliminates Deepgram's cross-speaker contamination on enrolled speakers; un-enrolled speakers fall through to Deepgram's IDs with the rename UI as backup.
 
-### Key UX Features
-- **☁️ Deepgram Nova-3 cloud STT**: Punctuation, smart formatting, sentence-level streaming
-- **🏠 Local Parakeet STT**: Fully offline fallback option
-- **🔀 Swappable backends**: Switch via menu bar → STT Backend submenu
-- **Forward-only typing**: Only is_final segments get typed — zero backspacing
-- **Orb animation**: Fires on interims for immediate speech feedback
-- **EOU tuning**: Deepgram endpointing 1500ms, local fallback timer 2500ms, speech_final disabled
-- **Auto-send with Enter**: Optional hands-free mode for Claude Code etc.
+Three modes available via menu:
+1. Speaker Labels OFF — original dictation behavior
+2. Speaker Labels ON, no enrolled speakers — Deepgram IDs surface as `[Speaker 0]`, rename via menu
+3. Speaker Labels ON, enrolled speakers — embedding-based override active, `[Alex]`/`[Mom]`/etc. with high confidence
 
-### iPhone UX / Architecture
-- **Native SwiftUI iPhone app**: API key field, record/stop, transcript view, copy/share
-- **Local mode default**: Uses Apple on-device Speech recognition; no Deepgram key required for first test
-- **Custom keyboard extension**: Inserts latest transcript into active iOS text field with `textDocumentProxy.insertText`
-- **Free-device bridge**: Yappatron-tagged `UIPasteboard` item instead of App Group, to avoid paid App Group provisioning
-- **Background audio mode**: Declared for the companion-app recording workflow, subject to iOS suspension behavior
-- **Signing path**: Free Personal Team direct install works; no paid Apple Developer Program required for personal device testing
+Three line-break styles between speaker turns: none (inline), newline (TextEdit/Notes), backslash+newline (Claude Code multi-line input).
 
-### What's Done
-- ✅ **Cloud STT (Deepgram Nova-3)** — WebSocket streaming, punctuation, smart formatting
-- ✅ **Forward-only chunk streaming** — is_final segments typed as they arrive, no backspacing
-- ✅ **Decoupled orb from typing** — interims trigger orb, only finals trigger typing
-- ✅ **EOU timing tuned** — speech_final disabled, endpointing 1500ms, local timer 2500ms
-- ✅ **Pluggable STTProvider protocol** — Swappable backends
-- ✅ **API key management** — UserDefaults storage, menu bar UI
-- ✅ Orb animations: Voronoi Cells (default) + Concentric Rings
-- ✅ Dual-pass refinement: Optional toggle for local mode
-- ✅ **iPhone app installed and launched** — Free Personal Team, Developer Mode enabled, profile trusted
-- ✅ **Local iOS transcription mode implemented** — Apple on-device Speech framework, Local default, Deepgram optional
-- ✅ **iOS keyboard extension scaffold** — Pasteboard bridge for type-anywhere insertion
-- ✅ **Public repo hygiene** — No Apple team ID, device ID, Deepgram key, or App Group entitlement committed
+Validated easy-mode (quiet 1:1) cleanly. Hard-mode (3+ speakers, ambient noise) recoverable but not perfect — fragmentation is fine since override matches against voiceprint not ID, occasional phantom-speaker noise from overlap remains.
 
-### Landing Page (2026-01-10)
-- ✅ Deployed to yappatron.pages.dev
+### Branches
+
+- `main` — current shipped state
+- `feature/speaker-registry` — original pre-STT embedding gate (dead, kept for reference only)
+- `feature/local-segmenter` — experimental local-only diarization. FluidAudio segmentation was coarser than Deepgram's in our tests; reverted main, branch preserved for later evaluation if Deepgram regresses or a cloud-free path is needed.
+
+### iPhone app (unchanged this session)
+
+Native iOS project at `packages/ios/YappatronIOS` still installed on test iPhone via free Personal Team signing. Local mode (Apple on-device Speech) is the default backend. Awaiting first-run user validation. Companion keyboard extension scaffolded with Yappatron-tagged pasteboard bridge.
+
+## What's Done This Session
+
+### Diarization (2026-05-08)
+
+- ✅ **Deepgram `diarize=true`** — word-level speaker tags + start/end timestamps in WebSocket responses
+- ✅ **Word-level run aggregation** — consecutive same-speaker words merged into runs with start/end timing
+- ✅ **`SpeakerLabelMap`** — UserDefaults-backed `[Int: String]` rename map, seen-IDs tracker, enabled flag, line-break style
+- ✅ **`LineBreakStyle`** — three styles (none / newline / Claude-Code), persisted, exposed via menu
+- ✅ **Always-label every utterance** — within-utterance same-speaker dedup preserved, cross-utterance label restart applied
+- ✅ **Enrollment registry** — `~/Library/Application Support/Yappatron/enrolled-speakers.json`, JSON-backed `EnrolledSpeaker` records
+- ✅ **`SpeakerEmbedder`** — actor wrapping FluidAudio's `extractSpeakerEmbedding` with one-time model load
+- ✅ **`EnrollmentRecorder` + `EnrollSpeakerWindow`** — 10s capture flow with floating progress window
+- ✅ **`HybridDiarizer`** — per-run override pass; cosine distance against registry, threshold 0.45, min run 0.3s
+- ✅ **`StreamAudioBuffer`** — long-lived rolling audio buffer anchored to Deepgram's t=0 for run-slicing
+- ✅ **Race fix** — `handleFinalTranscription` awaits the in-flight override task before emitting, so typed text reflects override decisions
+- ✅ **`HybridDiagLog`** — append-only diagnostic log of per-run distances and override decisions for debugging
+- ✅ **Menu wiring** — Speaker Labels toggle, Line Breaks submenu, Name Speakers submenu, Enrolled Speakers submenu (Deepgram-backend gated)
+- ✅ **FluidAudio bump** — 0.9.1 → 0.14.4 for Swift 6.3 compatibility, two API call sites updated
 
 ## Next Priority
 
-### iPhone Local ASR Test
-Validate the newly implemented Local mode on device:
-- Grant microphone and speech recognition permissions when prompted
-- Record on iPhone and confirm transcript appears without a Deepgram key
-- If Apple Speech quality/latency is not good enough, evaluate FluidAudio/Parakeet iOS/Core ML integration next
-- Preserve Deepgram as optional cloud backend
+### Input focus locking — P0
+
+See "Current Focus" above. Open design questions to be resolved before implementation.
 
 ### Other Backlog
-- [ ] Enable the Yappatron keyboard on iPhone and test pasteboard insertion in another app
-- [ ] Finish normal Xcode platform/runtime setup so asset catalog/icon builds work without CLI override
-- [ ] Hot-swap backends without requiring restart
-- [ ] Additional cloud providers (Soniox at $0.12/hr)
+
+- [ ] Auto-clear speaker rename map on new transcription session (Mom's foot-gun risk: yesterday's Mom can become today's Callie if reused)
+- [ ] Confirm local Parakeet backend still works under FluidAudio 0.14.4 (smoke test pending)
+- [ ] Address backspacing UX (flagged as disliked, untouched this session)
+- [ ] Retroactive rename rewriting of already-typed transcript (open question — worth it?)
+- [ ] Ensemble diarization (Deepgram + local segmentation + local identity) for harder real-world conditions
+- [ ] Test iPhone Local mode on device end-to-end
+- [ ] Enable / test iOS type-anywhere keyboard flow
+- [ ] Hot-swap backends without restart
 - [ ] App notarization
 
 ## Quick Commands
 
 ```bash
 # Mac - build & run
-cd ~/Workspace/yappatron/packages/app/Yappatron
+cd ~/Workspace/yappatron
 ./scripts/run-dev.sh
+
+# Tail diarization diagnostics during a session
+tail -F ~/Library/Application\ Support/Yappatron/hybrid-diag.log
 
 # VPS - deploy website
 cd ~/code/yappatron/packages/website

@@ -1,83 +1,80 @@
 # Next Up
 
-**Last Updated:** 2026-05-02
+**Last Updated:** 2026-05-08
 
 ## TOP PRIORITY (next session)
 
-**Test iPhone Local mode** — P0
-- Current state: Yappatron is installed and launches on a connected test iPhone via free Personal Team signing.
-- Local mode is now implemented with Apple's on-device Speech framework and is the default backend.
-- Goal: Verify that recording on iPhone produces a transcript without a Deepgram key.
-- Validation: grant microphone/speech permissions, record on iPhone, see transcript appear, then enable keyboard and insert transcript into another app via the Yappatron keyboard.
-- If Apple Speech is not good enough, evaluate FluidAudio/Parakeet iOS/Core ML integration next.
+### Input focus locking — P0
+
+Multi-speaker / meeting use cases need the transcript to flow into a *specific* destination regardless of where the cursor moves. Today, focus changes mid-conversation split the transcript across apps.
+
+Initial sketch (no decisions locked):
+- Enumerate distinct text inputs we've typed into and present them in a menu as "lock to this input" options
+- On a final-with-typing, refocus the locked target before typing, then return focus
+- Or: type via accessibility APIs that don't require focus (preferred if feasible)
+- Handle the "locked target disappeared" case explicitly (pause? fallback? notify?)
+
+Pairs naturally with the broader "build this into the agent product" plan — once the typing destination is stable, dictating into an agent session is robust.
 
 ## Other Priorities
 
-1. **Voice isolation in noisy environments** — P1
-- GitHub issue: https://github.com/alosec/yappatron/issues/1
-- Problem: In cafes/hallways/meetings, Yappatron picks up background voices and pollutes the user's dictation
-- Goal: Only transcribe the primary speaker (the user), filter out everyone else
-- Approaches to evaluate:
-  1. Speaker enrollment + voice print matching (local model: pyannote, SpeechBrain ECAPA-TDNN)
-  2. Deepgram diarization + filter by speaker ID
-  3. Apple's Voice Processing audio unit (AVAudioEngine built-in)
-  4. Hybrid: VAD + speaker verification per chunk
-- Open questions: enrollment vs auto-detect? Strictness? Toggle on/off?
-- Pairs well with future diarization/meeting-mode features
+1. **Auto-clear speaker rename map on new session** — P1
+   - Mom's foot-gun: today's "Mom" mapping persists into tomorrow's "Callie" conversation
+   - Auto-clear on transcription start, OR add a prominent "new session" menu action
 
-2. **Enable/test iOS type-anywhere keyboard flow** — P1
-   - On iPhone: Settings > General > Keyboard > Keyboards > add Yappatron Keyboard
-   - Turn on Allow Full Access so the keyboard can read the Yappatron-tagged pasteboard item
-   - Test insertion in Notes/Messages/Claude/etc.
-   - Note: third-party keyboards are unavailable in secure text fields and some restricted inputs
+2. **Confirm local Parakeet backend works under FluidAudio 0.14.4** — P1
+   - We bumped the dep and updated the two API call sites; release builds clean but local mode hasn't been smoke-tested under the new version
+   - Quick verification: enable Local backend, dictate, confirm transcript is correct
 
-3. **Normal Xcode/iOS platform completion** — P2
-   - Current ASAP install bypassed `Assets.xcassets` at build time because `actool` complained about missing simulator runtimes.
-   - Finish Xcode's iOS 26.4 platform/runtime component later so normal Xcode Run uses app icons and standard destinations.
+3. **Ensemble diarization** — P2
+   - Deepgram + local segmentation as parallel signals, vote per word
+   - Local identity (FluidAudio embedding) remains the source of truth for who
+   - Cost: continuous local diarization in real time
+   - Benefit: catches mid-sentence speaker changes Deepgram misses
+   - Only worth doing if hard-mode quality on Deepgram alone proves insufficient for the agent product use case
 
-4. **Real-time character-level streaming** — P2
-   - Currently text appears in sentence-level chunks (is_final segments only)
-   - Goal: character-by-character streaming while speaking
-   - Backspacing approach tried extensively — doesn't work with Deepgram's interim revisions
-   - Ideas: stable prefix of interims, word-level confidence, hybrid approach
+4. **Backspacing UX** — P2
+   - User flagged as disliked but punted in this session
+   - Need to clarify the actual failure mode before iterating
 
-5. **Speaker diarization for meeting mode** — P3
-   - Add `diarization=true` to Deepgram params
-   - Format output with speaker labels (Alex: ..., Speaker 2: ...)
-   - Voice trigger for naming ("Hey Yappatron, this is Alex")
-   - Different output target than dictation (file/window vs keystroke sim)
+5. **Retroactive rename rewriting** — P3
+   - Open question whether reaching back to edit already-typed text is worth the engineering vs. just typing forward and cleaning up post-session
 
-6. **Hot-swap backends without restart** — P3
+6. **iPhone validation backlog** — P2
+   - First-run Local-mode test on device
+   - Type-anywhere keyboard flow
+   - Eventually a paid Apple Developer Program path with App Group entitlement for cleaner companion-app/keyboard sharing
 
-7. **Add Soniox as third backend** — P3
-   - $0.12/hr — long-term cost alternative after Deepgram free credits expire
+7. **Hot-swap backends without restart** — P3
+8. **Real-time character-level streaming** — P3
+9. **Add Soniox as third backend** — P3
 
-## Monitoring
+## Recently Completed
 
-- **Deepgram WebSocket stability** — Watch for disconnects
-- **EOU timing** — Currently endpointing=1500ms, local timer=2500ms, speech_final disabled
+- ✓ **Hybrid diarization shipped** (2026-05-08) — Deepgram word-level segmentation + local FluidAudio embedding override, 0.45 cosine threshold, 0.3s min run, race-fix for typing waiting on override task
+- ✓ **`feature/local-segmenter` branched** (2026-05-08) — experimental local-only diarization preserved off-main; FluidAudio segmentation was coarser than Deepgram's word-level boundaries in real testing
+- ✓ **FluidAudio 0.9.1 → 0.14.4** (2026-05-08) — Swift 6.3 toolchain compatibility; updated `LocalSTTProvider.loadModels(from:)` and `BatchProcessor` decoder-state API
+- ✓ **iPhone app installed and launched** (2026-05-02) — Free Xcode Personal Team, Developer Mode, trusted profile
+- ✓ **Local iOS transcription mode** (2026-05-02) — Apple on-device Speech framework, Local default, Deepgram optional
+- ✓ **Forward-only chunk streaming** (2026-03-24) — is_final segments typed, interims for orb only
+- ✓ **Deepgram Nova-3 cloud STT** (2026-03-24) — Full WebSocket integration
+- ✓ **Pluggable STTProvider architecture** (2026-03-24) — Swappable backends via protocol
 
 ## Validation Status
 
-- ✅ **is_final chunk streaming** (2026-03-24) — "pretty fucking great", clean forward-only typing, no backspacing
-- ✅ **Deepgram Nova-3** (2026-03-24) — "almost too fast and too good", "incredible UX"
-- ✅ **Orb decoupled from typing** (2026-03-24) — Interims trigger orb, only finals type
+- ✅ **Hybrid diarization easy-mode** (2026-05-08) — quiet 1:1, two enrolled speakers, multi-run utterances cleanly attributed, cosine separation -7 to -9 vs -0.5 makes overrides confident
+- ⚠️ **Hybrid diarization hard-mode** (2026-05-08) — 3+ speakers outdoors with ambient noise, fragmentation handled by per-run embedding match, but phantom-speaker noise from overlap remains. Recoverable, not perfect.
+- ✅ **is_final chunk streaming** (2026-03-24) — clean forward-only typing, no backspacing
+- ✅ **Deepgram Nova-3** (2026-03-24) — "incredible UX"
+- ✅ **Orb decoupled from typing** (2026-03-24) — interims for orb, finals for typing
 
-## Key Learnings (2026-03-24 session)
+## Key Learnings (2026-05-08 session)
 
-- Deepgram interims revise aggressively — any diffing/backspacing approach causes text loss
-- `utterance_end_ms` is not a valid Deepgram streaming param (causes HTTP 400)
-- `speech_final` cuts users off mid-thought — disable it, use silence timeout only
-- URLSessionWebSocketTask works with auth headers despite initial concerns
-- Keychain doesn't work well with ad-hoc signed apps — use UserDefaults for API keys
-- The right streaming architecture: is_final only for typing, interims for speech detection
-
-## Recently Completed
-- ✓ **iPhone app installed and launched** (2026-05-02) — Free Xcode Personal Team, Developer Mode, trusted profile
-- ✓ **Local iOS transcription mode** (2026-05-02) — Apple on-device Speech framework, Local default, Deepgram optional
-- ✓ **Free-device iOS bridge** (2026-05-02) — Removed App Group entitlement, replaced with Yappatron-tagged local pasteboard item
-- ✓ **iOS custom keyboard extension scaffold** (2026-05-02) — Inserts latest transcript with `textDocumentProxy.insertText`
-- ✓ **Forward-only chunk streaming** (2026-03-24) — is_final segments typed, interims for orb only
-- ✓ **EOU timing tuned** (2026-03-24) — Multiple rounds of tuning, landed on 1500ms/2500ms
-- ✓ **Deepgram Nova-3 cloud STT** (2026-03-24) — Full WebSocket integration
-- ✓ **Pluggable STTProvider architecture** (2026-03-24) — Swappable backends via protocol
+- Deepgram streaming diarization is great at *segmentation* (word-level boundaries) but flaky on *identity* (cross-speaker contamination, ID drift across sessions)
+- Local FluidAudio embedding extraction is great at *identity* against an enrolled registry (cosine distances were dramatically separated) but its native segmentation is coarser than Deepgram's
+- The right architecture is hybrid: each layer doing what it's better at, no consultation between them — local override blindly looks at audio, then replaces Deepgram's tag if confident
+- Audio alignment matters: if the local audio buffer's t=0 doesn't match Deepgram's t=0, every slice is wrong by the offset and the override produces a clean 1:1 flip
+- Race conditions matter: `onDiarizedFinal` and `onFinal` both dispatch to main in order, but if the override is async, typing fires before override lands. Engine has to await the override task before emitting
+- "Don't pin diarize_version" — Deepgram's parameter is effectively deprecated; default routing gets you the latest improved diarizer
+- Going local-only (drop Deepgram diarization entirely) was tested and lost — preserved as `feature/local-segmenter`
+- Mom's product instinct ("you don't have to know how to make it blue, AI is making it blue for you") was the line of the night

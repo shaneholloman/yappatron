@@ -21,6 +21,10 @@
       "body": "Deepgram Nova-3 with punctuation, capitalization, and smart formatting. Sub-300ms latency."
     },
     {
+      "title": "knows who's talking",
+      "body": "Enroll your voice once. Yappatron labels every line so two-person conversations stream as [Alex] / [Mom] right into your editor. Hybrid Deepgram + local voiceprint matching."
+    },
+    {
       "title": "local or cloud — your call",
       "body": "Switch between Deepgram cloud STT and fully local Parakeet from the menu bar. Your words, your rules."
     }
