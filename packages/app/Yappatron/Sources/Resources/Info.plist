@@ -27,5 +27,7 @@
     <string>Yappatron uses the microphone for voice dictation.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>Yappatron needs to send keystrokes to type transcribed text.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>Yappatron uses system audio capture to transcribe video calls (FaceTime, Zoom, etc.) and other audio playing on your Mac. No screen contents are recorded.</string>
 </dict>
 </plist>

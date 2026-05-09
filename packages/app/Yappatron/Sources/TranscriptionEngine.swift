@@ -206,9 +206,8 @@ class TranscriptionEngine: ObservableObject {
     private var sttProvider: STTProvider?
     private let backend: STTBackend
 
-    // Audio capture
-    private var audioEngine: AVAudioEngine?
-    private var inputNode: AVAudioInputNode?
+    // Audio capture (pluggable: MicAudioSource, SystemAudioSource, or MixedAudioSource)
+    private var audioCaptureSource: AudioCaptureSource?
 
     // Track current partial for diffing
     private var currentPartial: String = ""
@@ -314,7 +313,7 @@ class TranscriptionEngine: ObservableObject {
             log("STT provider ready")
 
             // Setup audio capture
-            let processingFormat = try setupAudioCapture()
+            let processingFormat = try await setupAudioCapture()
 
             // Initialize audio chunk buffer now that we know the format
             audioChunkBuffer = AudioChunkBuffer(format: processingFormat)
@@ -523,18 +522,17 @@ class TranscriptionEngine: ObservableObject {
             return
         }
 
-        do {
-            try audioEngine?.start()
-            status = .listening
-            log("Listening started")
-        } catch {
-            status = .error(error.localizedDescription)
-            log("Failed to start audio engine: \(error.localizedDescription)")
-        }
+        // The AudioCaptureSource is already running from setupAudioCapture(),
+        // since SCStream / AVAudioEngine both want to be started once and
+        // outlive the listening on/off toggle. We just flip status here.
+        status = .listening
+        log("Listening started")
     }
 
     func stopCapture() {
-        audioEngine?.stop()
+        // Hard stop the source; will be re-created on next start cycle.
+        audioCaptureSource?.stop()
+        audioCaptureSource = nil
         status = .ready
         didAnchorStreamBuffer = false
         Task { await streamAudioBuffer.reset() }
@@ -578,20 +576,9 @@ class TranscriptionEngine: ObservableObject {
         }
     }
 
-    private func setupAudioCapture() throws -> AVAudioFormat {
+    private func setupAudioCapture() async throws -> AVAudioFormat {
         log("Setting up audio capture...")
-        audioEngine = AVAudioEngine()
-        inputNode = audioEngine?.inputNode
 
-        guard let inputNode = inputNode else {
-            throw NSError(domain: "TranscriptionEngine", code: 1,
-                         userInfo: [NSLocalizedDescriptionKey: "No audio input available"])
-        }
-
-        let inputFormat = inputNode.outputFormat(forBus: 0)
-        log("Input format: \(inputFormat.channelCount) channels, \(inputFormat.sampleRate) Hz")
-
-        // Create format for processing (16kHz mono)
         guard let processingFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: 16000,
@@ -599,55 +586,40 @@ class TranscriptionEngine: ObservableObject {
             interleaved: false
         ) else {
             throw NSError(domain: "TranscriptionEngine", code: 2,
-                         userInfo: [NSLocalizedDescriptionKey: "Failed to create audio format"])
+                          userInfo: [NSLocalizedDescriptionKey: "Failed to create audio format"])
         }
 
-        // Install tap and convert to 16kHz
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) { [weak self] buffer, _ in
-            self?.processAudioBuffer(buffer, inputFormat: inputFormat, outputFormat: processingFormat)
+        let captureSystemAudio = UserDefaults.standard.bool(forKey: "captureSystemAudio")
+        let source: AudioCaptureSource
+        if captureSystemAudio {
+            log("Audio capture mode: MIXED (mic + system audio via ScreenCaptureKit)")
+            source = MixedAudioSource(mic: MicAudioSource(), system: SystemAudioSource())
+        } else {
+            log("Audio capture mode: MIC only")
+            source = MicAudioSource()
         }
 
-        audioEngine?.prepare()
+        try await source.start { [weak self] buffer in
+            self?.handleCapturedBuffer(buffer)
+        }
+
+        self.audioCaptureSource = source
         log("Audio capture setup complete")
         return processingFormat
     }
 
     private var audioChunkCount = 0
 
-    private func processAudioBuffer(_ buffer: AVAudioPCMBuffer, inputFormat: AVAudioFormat, outputFormat: AVAudioFormat) {
-        // Convert to 16kHz mono using AVAudioConverter
-        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
-            log("Failed to create audio converter")
-            return
-        }
-
-        let ratio = outputFormat.sampleRate / inputFormat.sampleRate
-        let outputFrameCount = AVAudioFrameCount(Double(buffer.frameLength) * ratio)
-
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputFrameCount) else {
-            log("Failed to create output buffer")
-            return
-        }
-
-        var error: NSError?
-        let status = converter.convert(to: outputBuffer, error: &error) { inNumPackets, outStatus in
-            outStatus.pointee = .haveData
-            return buffer
-        }
-
-        guard status != .error, error == nil else {
-            log("Conversion error: \(error?.localizedDescription ?? "unknown")")
-            return
-        }
-
+    /// Receives 16kHz mono Float32 buffers from whichever AudioCaptureSource is
+    /// active. Buffers are already in the target format, so no conversion is
+    /// needed here — just enqueue.
+    private func handleCapturedBuffer(_ buffer: AVAudioPCMBuffer) {
         audioChunkCount += 1
         if audioChunkCount % 50 == 0 {
-            log("Audio chunk #\(audioChunkCount), frames: \(outputBuffer.frameLength)")
+            log("Audio chunk #\(audioChunkCount), frames: \(buffer.frameLength)")
         }
-
-        // Enqueue buffer for processing (non-blocking)
         Task {
-            await audioBufferQueue.enqueue(outputBuffer)
+            await audioBufferQueue.enqueue(buffer)
         }
     }
 
@@ -721,8 +693,6 @@ class TranscriptionEngine: ObservableObject {
     func cleanup() {
         stopCapture()
         stopAudioProcessing()
-        inputNode?.removeTap(onBus: 0)
-        audioEngine = nil
         sttProvider?.cleanup()
         sttProvider = nil
         log("TranscriptionEngine cleaned up")

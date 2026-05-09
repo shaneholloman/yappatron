@@ -394,6 +394,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         enterItem.state = pressEnterAfterSpeech ? .on : .off
         menu.addItem(enterItem)
 
+        // Capture system audio (FaceTime, Zoom, browser, etc.) via ScreenCaptureKit
+        let systemAudioItem = NSMenuItem(title: "Capture System Audio (FaceTime/Zoom/etc)", action: #selector(toggleSystemAudioCapture), keyEquivalent: "")
+        systemAudioItem.state = UserDefaults.standard.bool(forKey: "captureSystemAudio") ? .on : .off
+        menu.addItem(systemAudioItem)
+
         // Only show dual-pass option for local backend
         if !STTBackend.current.returnsPunctuatedText {
             let refinementItem = NSMenuItem(title: "Dual-Pass Refinement (Punctuation)", action: #selector(toggleRefinementAction), keyEquivalent: "")
@@ -716,6 +721,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     @objc func toggleEnterAction() {
         pressEnterAfterSpeech.toggle()
+    }
+
+    @objc func toggleSystemAudioCapture() {
+        let key = "captureSystemAudio"
+        let newValue = !UserDefaults.standard.bool(forKey: key)
+        UserDefaults.standard.set(newValue, forKey: key)
+
+        let alert = NSAlert()
+        alert.messageText = newValue ? "System Audio Capture Enabled" : "System Audio Capture Disabled"
+        if newValue {
+            alert.informativeText = """
+            Yappatron will now capture both your microphone AND any audio playing on your Mac (FaceTime, Zoom, browser, etc.).
+
+            macOS will prompt for Screen Recording permission the first time this runs. Yappatron uses that permission only to capture system audio — no screen contents are recorded.
+
+            Please quit and relaunch Yappatron for the change to take effect.
+            """
+        } else {
+            alert.informativeText = "Yappatron will go back to capturing only the microphone. Please quit and relaunch Yappatron for the change to take effect."
+        }
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     @objc func toggleRefinementAction() {
