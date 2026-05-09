@@ -427,18 +427,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             enrolledItem.submenu = enrolledMenu
             menu.addItem(enrolledItem)
 
-            // Line break style submenu
-            let lineBreakItem = NSMenuItem(title: "Line Breaks Between Speakers", action: nil, keyEquivalent: "")
-            let lineBreakMenu = NSMenu()
-            for style in LineBreakStyle.allCases {
-                let item = NSMenuItem(title: style.displayName, action: #selector(selectLineBreakStyle(_:)), keyEquivalent: "")
-                item.representedObject = style.rawValue
-                item.state = (style == SpeakerLabelMap.lineBreakStyle) ? .on : .off
-                lineBreakMenu.addItem(item)
-            }
-            lineBreakItem.submenu = lineBreakMenu
-            menu.addItem(lineBreakItem)
-
             let nameItem = NSMenuItem(title: "Name Speakers", action: nil, keyEquivalent: "")
             let nameMenu = NSMenu()
             let seen = SpeakerLabelMap.seenSpeakerIds()
@@ -768,12 +756,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     @objc func resetSpeakerNames() {
         SpeakerLabelMap.resetAll()
-    }
-
-    @objc func selectLineBreakStyle(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String,
-              let style = LineBreakStyle(rawValue: raw) else { return }
-        SpeakerLabelMap.lineBreakStyle = style
     }
 
     @objc func enrollNewSpeaker() {

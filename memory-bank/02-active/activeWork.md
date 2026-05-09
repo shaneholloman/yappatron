@@ -29,7 +29,14 @@ Three modes available via menu:
 2. Speaker Labels ON, no enrolled speakers — Deepgram IDs surface as `[Speaker 0]`, rename via menu
 3. Speaker Labels ON, enrolled speakers — embedding-based override active, `[Alex]`/`[Mom]`/etc. with high confidence
 
-Three line-break styles between speaker turns: none (inline), newline (TextEdit/Notes), backslash+newline (Claude Code multi-line input).
+Speaker turns are separated by a plain newline (the only mode). Live
+testing showed inline mode and the backslash+newline (Claude Code)
+mode both behaved poorly in practice — terminals and Claude Code's
+chat input both handle a real newline correctly, so the variant modes
+just added confusion. The `LineBreakStyle` enum, the "Line Breaks
+Between Speakers" menu, and the persisted UserDefaults key were all
+removed; `SpeakerLabelMap.lineBreakSeparator` is now a single
+hardcoded constant.
 
 Validated easy-mode (quiet 1:1) cleanly. Hard-mode (3+ speakers, ambient noise) recoverable but not perfect — fragmentation is fine since override matches against voiceprint not ID, occasional phantom-speaker noise from overlap remains.
 
@@ -45,12 +52,22 @@ Native iOS project at `packages/ios/YappatronIOS` still installed on test iPhone
 
 ## What's Done This Session
 
+### Line break simplification (2026-05-08, evening)
+
+Stripped the `LineBreakStyle` enum entirely. Inline (no break) was a
+useless default — runs from different speakers blended together. The
+backslash+newline "Claude Code" mode also turned out wrong: in Claude
+Code's chat input `\<Enter>` doesn't reliably produce a soft line
+break the way it does at a raw terminal prompt. Plain newline works
+correctly across TextEdit, Notes, terminal, *and* Claude Code, so it
+became the only mode. Menu submenu and the persisted UserDefaults key
+both removed. Code is meaningfully smaller now.
+
 ### Diarization (2026-05-08)
 
 - ✅ **Deepgram `diarize=true`** — word-level speaker tags + start/end timestamps in WebSocket responses
 - ✅ **Word-level run aggregation** — consecutive same-speaker words merged into runs with start/end timing
-- ✅ **`SpeakerLabelMap`** — UserDefaults-backed `[Int: String]` rename map, seen-IDs tracker, enabled flag, line-break style
-- ✅ **`LineBreakStyle`** — three styles (none / newline / Claude-Code), persisted, exposed via menu
+- ✅ **`SpeakerLabelMap`** — UserDefaults-backed `[Int: String]` rename map, seen-IDs tracker, enabled flag
 - ✅ **Always-label every utterance** — within-utterance same-speaker dedup preserved, cross-utterance label restart applied
 - ✅ **Enrollment registry** — `~/Library/Application Support/Yappatron/enrolled-speakers.json`, JSON-backed `EnrolledSpeaker` records
 - ✅ **`SpeakerEmbedder`** — actor wrapping FluidAudio's `extractSpeakerEmbedding` with one-time model load
@@ -59,7 +76,7 @@ Native iOS project at `packages/ios/YappatronIOS` still installed on test iPhone
 - ✅ **`StreamAudioBuffer`** — long-lived rolling audio buffer anchored to Deepgram's t=0 for run-slicing
 - ✅ **Race fix** — `handleFinalTranscription` awaits the in-flight override task before emitting, so typed text reflects override decisions
 - ✅ **`HybridDiagLog`** — append-only diagnostic log of per-run distances and override decisions for debugging
-- ✅ **Menu wiring** — Speaker Labels toggle, Line Breaks submenu, Name Speakers submenu, Enrolled Speakers submenu (Deepgram-backend gated)
+- ✅ **Menu wiring** — Speaker Labels toggle, Name Speakers submenu, Enrolled Speakers submenu (Deepgram-backend gated)
 - ✅ **FluidAudio bump** — 0.9.1 → 0.14.4 for Swift 6.3 compatibility, two API call sites updated
 
 ## Next Priority
@@ -75,6 +92,9 @@ Research done 2026-05-08. We're on FluidAudio 0.14.4 (current as of 2026-05-04) 
 ### Hybrid diarization tunable: `minRunSeconds = 0.0`
 
 Lowered the gating threshold to zero so every run gets the embedding override pass regardless of duration. Previously runs under 0.3s fell through to Deepgram's IDs, which proved less reliable than even noisy short-audio embeddings. Tradeoff is more variance on tiny utterances ("art", "yeah") but no more silent fallback to Deepgram on short runs.
+
+### Goal State: Advanced Transcription
+Captured vision for speaker diarization, voice profiles, multi-model offerings, and optional remote GPU inference (Pi Pods). See: `02-active/future-vision-advanced-transcription.md`.
 
 ### Other Backlog
 

@@ -409,11 +409,10 @@ class TranscriptionEngine: ObservableObject {
     /// Every utterance always leads with a label so the reader (or downstream LLM)
     /// can attribute every line. Within an utterance, label only changes when the
     /// speaker actually changes — consecutive same-speaker words don't get re-labeled.
-    /// On every speaker change (including the first run of an utterance, when a
-    /// line break style is set), the configured `LineBreakStyle.separator` is
-    /// inserted so terminals/editors get a real line break.
+    /// On every speaker change (including the first run of an utterance), a plain
+    /// newline is inserted so terminals/editors get a real line break.
     private func formatLabeled(_ runs: [(speakerId: Int, text: String, displayName: String?)]) -> String {
-        let style = SpeakerLabelMap.lineBreakStyle
+        let separator = SpeakerLabelMap.lineBreakSeparator
         var output = ""
         // Within-utterance tracking by display name (override-aware) so consecutive
         // same-person runs don't re-label even if Deepgram changed IDs mid-utterance.
@@ -425,9 +424,9 @@ class TranscriptionEngine: ObservableObject {
             let label = run.displayName ?? SpeakerLabelMap.name(forSpeakerId: run.speakerId)
             if label != lastLabel {
                 if !isFirstSegment {
-                    output += style.separator
-                } else if style != .none && lastLabeledLabel != nil {
-                    output += style.separator
+                    output += separator
+                } else if lastLabeledLabel != nil {
+                    output += separator
                 }
                 output += "[\(label)] \(trimmedRun)"
                 lastLabel = label

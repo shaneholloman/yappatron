@@ -2,49 +2,16 @@ import Foundation
 
 /// Manual mapping from Deepgram speaker IDs (0, 1, 2, ...) to user-facing names.
 /// Persisted in UserDefaults so names survive across sessions.
-/// How to break between speaker turns in the typed text.
-enum LineBreakStyle: String, CaseIterable {
-    /// No break — speaker runs flow inline (today's default).
-    case none
-    /// Plain newline between turns. Works in TextEdit, Notes, most text fields.
-    case newline
-    /// Backslash + newline between turns. For terminals like Claude Code where
-    /// `\<Enter>` produces a soft line break in the prompt buffer.
-    case claudeCode
-
-    var displayName: String {
-        switch self {
-        case .none: return "None (inline)"
-        case .newline: return "Newline"
-        case .claudeCode: return "Backslash + Newline (Claude Code)"
-        }
-    }
-
-    /// The string inserted before a `[Name] ` label when the speaker changes
-    /// from the previous run.
-    var separator: String {
-        switch self {
-        case .none: return " "
-        case .newline: return "\n"
-        case .claudeCode: return "\\\n"
-        }
-    }
-}
-
 enum SpeakerLabelMap {
 
     private static let enabledKey = "speakerLabels.enabled"
     private static let mapKey = "speakerLabels.map"
     private static let seenIdsKey = "speakerLabels.seenIds"
-    private static let lineBreakStyleKey = "speakerLabels.lineBreakStyle"
 
-    static var lineBreakStyle: LineBreakStyle {
-        get {
-            let raw = UserDefaults.standard.string(forKey: lineBreakStyleKey) ?? ""
-            return LineBreakStyle(rawValue: raw) ?? .none
-        }
-        set { UserDefaults.standard.set(newValue.rawValue, forKey: lineBreakStyleKey) }
-    }
+    /// Separator inserted between speaker turns. Always a plain newline —
+    /// terminals and editors both handle it correctly, and the legacy
+    /// inline / backslash-newline modes were unreliable in practice.
+    static let lineBreakSeparator = "\n"
 
     static var enabled: Bool {
         get { UserDefaults.standard.bool(forKey: enabledKey) }
