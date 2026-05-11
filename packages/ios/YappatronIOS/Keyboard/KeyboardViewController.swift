@@ -12,7 +12,6 @@ final class KeyboardViewController: UIInputViewController {
     private let spaceButton = UIButton(type: .system)
     private let returnButton = UIButton(type: .system)
     private let deleteButton = UIButton(type: .system)
-    private let nextKeyboardButton = UIButton(type: .system)
 
     private var pendingTranscripts: [SharedTranscript] = []
     private var dictationState = SharedDictationState(
@@ -24,6 +23,12 @@ final class KeyboardViewController: UIInputViewController {
     private var showingHistory = false
     private var refreshTimer: Timer?
     private var lastStreamedLiveTranscript = ""
+    private var transientStatusText: String?
+    private var transientStatusExpiresAt: Date?
+
+    private let keyboardBackgroundColor = UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+    private let activeTextColor = UIColor(white: 0.94, alpha: 1)
+    private let secondaryTextColor = UIColor(white: 0.64, alpha: 1)
 
     private enum LocalKeys {
         static let lastInsertedUpdatedAt = "lastAutoInsertedUpdatedAt"
@@ -55,12 +60,12 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func configureView() {
-        view.backgroundColor = .systemGray5
+        view.backgroundColor = keyboardBackgroundColor
 
         transcriptLabel.font = .preferredFont(forTextStyle: .callout)
         transcriptLabel.numberOfLines = 3
         transcriptLabel.lineBreakMode = .byTruncatingTail
-        transcriptLabel.textColor = .label
+        transcriptLabel.textColor = activeTextColor
         transcriptLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         micButton.configuration = .filled()
@@ -82,11 +87,6 @@ final class KeyboardViewController: UIInputViewController {
         insertButton.addTarget(self, action: #selector(insertButtonTapped), for: .touchUpInside)
         insertButton.accessibilityLabel = "Finish dictation"
 
-        nextKeyboardButton.configuration = .plain()
-        nextKeyboardButton.configuration?.image = UIImage(systemName: "globe")
-        nextKeyboardButton.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
-        nextKeyboardButton.accessibilityLabel = "Next keyboard"
-
         undoButton.configuration = .plain()
         undoButton.configuration?.image = UIImage(systemName: "arrow.uturn.backward")
         undoButton.addTarget(self, action: #selector(undoButtonTapped), for: .touchUpInside)
@@ -107,7 +107,7 @@ final class KeyboardViewController: UIInputViewController {
         deleteButton.addTarget(self, action: #selector(deleteButtonTapped), for: .touchUpInside)
         deleteButton.accessibilityLabel = "Delete"
 
-        let primaryRow = UIStackView(arrangedSubviews: [nextKeyboardButton, micButton, historyButton, insertButton])
+        let primaryRow = UIStackView(arrangedSubviews: [micButton, historyButton, insertButton])
         primaryRow.axis = .horizontal
         primaryRow.alignment = .fill
         primaryRow.distribution = .fill
@@ -125,7 +125,6 @@ final class KeyboardViewController: UIInputViewController {
         buttonRow.distribution = .fill
         buttonRow.spacing = 8
 
-        nextKeyboardButton.widthAnchor.constraint(equalToConstant: 44).isActive = true
         historyButton.widthAnchor.constraint(equalToConstant: 44).isActive = true
         undoButton.widthAnchor.constraint(equalToConstant: 42).isActive = true
         returnButton.widthAnchor.constraint(equalToConstant: 42).isActive = true
@@ -166,7 +165,11 @@ final class KeyboardViewController: UIInputViewController {
             ? pendingText(from: pendingTranscripts)
             : dictationState.liveTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        if text.isEmpty {
+        if let statusText = activeTransientStatusText() {
+            transcriptLabel.text = statusText
+        } else if !hasFullAccess {
+            transcriptLabel.text = "Allow Full Access for live dictation"
+        } else if text.isEmpty {
             if dictationState.isRecording {
                 transcriptLabel.text = "Listening"
             } else if pendingTranscripts.isEmpty {
@@ -185,12 +188,13 @@ final class KeyboardViewController: UIInputViewController {
         } else {
             transcriptLabel.text = text
         }
-        transcriptLabel.textColor = text.isEmpty ? .secondaryLabel : .label
+        transcriptLabel.textColor = text.isEmpty || !hasFullAccess ? secondaryTextColor : activeTextColor
         micButton.configuration?.title = dictationState.isRecording ? "Recording" : "Start Dictation"
         micButton.configuration?.image = UIImage(systemName: dictationState.isRecording ? "waveform" : "mic.fill")
         micButton.isEnabled = !dictationState.isRecording
         insertButton.isEnabled = dictationState.isRecording || !pendingTranscripts.isEmpty || !text.isEmpty
         insertButton.configuration?.title = dictationState.isRecording ? "Finish" : "Insert"
+        historyButton.isEnabled = hasFullAccess
     }
 
     private func autoInsertIfNeeded() {
@@ -259,12 +263,22 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     @objc private func micButtonTapped() {
+        showTransientStatus(hasFullAccess ? "Opening Yappatron" : "Opening Yappatron. Enable Full Access for live streaming.")
         transcriptStore.saveKeyboardCommand("start")
         guard let url = URL(string: "yappatron://dictation/start") else {
             return
         }
 
-        extensionContext?.open(url, completionHandler: nil)
+        let responderHandled = openURLThroughResponderChain(url)
+        extensionContext?.open(url) { [weak self] success in
+            DispatchQueue.main.async {
+                if success || responderHandled {
+                    self?.showTransientStatus("Swipe back after Yappatron opens")
+                } else {
+                    self?.showTransientStatus("Open Yappatron manually")
+                }
+            }
+        }
     }
 
     @objc private func historyButtonTapped() {
@@ -358,5 +372,42 @@ final class KeyboardViewController: UIInputViewController {
             localDefaults.set(newest, forKey: LocalKeys.lastInsertedUpdatedAt)
         }
         pendingTranscripts.removeAll { $0.updatedAt <= newest }
+    }
+
+    private func showTransientStatus(_ text: String) {
+        transientStatusText = text
+        transientStatusExpiresAt = Date().addingTimeInterval(4)
+        transcriptLabel.text = text
+        transcriptLabel.textColor = secondaryTextColor
+    }
+
+    private func activeTransientStatusText() -> String? {
+        guard let transientStatusText,
+              let transientStatusExpiresAt else {
+            return nil
+        }
+
+        if transientStatusExpiresAt > Date() {
+            return transientStatusText
+        }
+
+        self.transientStatusText = nil
+        self.transientStatusExpiresAt = nil
+        return nil
+    }
+
+    private func openURLThroughResponderChain(_ url: URL) -> Bool {
+        let selector = NSSelectorFromString("openURL:")
+        var responder: UIResponder? = self
+
+        while let current = responder {
+            if current.responds(to: selector) {
+                _ = current.perform(selector, with: url)
+                return true
+            }
+            responder = current.next
+        }
+
+        return false
     }
 }

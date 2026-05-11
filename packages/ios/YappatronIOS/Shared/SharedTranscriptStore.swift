@@ -7,6 +7,7 @@ private enum YappatronPasteboard {
     static let chunkRole = "chunk"
     static let stateRole = "state"
     static let commandRole = "command"
+    static let bridgeName = UIPasteboard.Name("com.yappatron.ios.bridge")
     static let metadataType = "com.yappatron.transcript.metadata"
     static let maxQueuedItems = 24
     static let recordingStateStaleAfter: TimeInterval = 3
@@ -120,8 +121,10 @@ final class SharedTranscriptStore {
         defaults.set(0, forKey: Keys.latestTranscriptUpdatedAt)
 
         if removePasteboard {
-            UIPasteboard.general.items = UIPasteboard.general.items.filter { item in
-                Self.metadata(from: item)?.source != YappatronPasteboard.source
+            availablePasteboards(createBridge: true).forEach { pasteboard in
+                pasteboard.items = pasteboard.items.filter { item in
+                    Self.metadata(from: item)?.source != YappatronPasteboard.source
+                }
             }
         }
     }
@@ -145,7 +148,7 @@ final class SharedTranscriptStore {
     }
 
     func keyboardTranscripts(after updatedAt: TimeInterval = 0) -> [SharedTranscript] {
-        UIPasteboard.general.items
+        yappatronItems(excludingRoles: [])
             .compactMap { Self.transcript(from: $0, role: YappatronPasteboard.chunkRole) }
             .filter { $0.updatedAt > updatedAt }
             .sorted { $0.updatedAt < $1.updatedAt }
@@ -206,7 +209,7 @@ final class SharedTranscriptStore {
     }
 
     private func refreshPasteboardMetadata() {
-        let queuedItems = UIPasteboard.general.items
+        let queuedItems = yappatronItems(excludingRoles: [])
             .compactMap { Self.transcript(from: $0, role: YappatronPasteboard.chunkRole) }
             .map { makePasteboardItem(text: $0.text, updatedAt: $0.updatedAt, role: YappatronPasteboard.chunkRole) }
         let nonChunkItems = yappatronItems(excludingRoles: [YappatronPasteboard.chunkRole])
@@ -272,17 +275,18 @@ final class SharedTranscriptStore {
     }
 
     private func setYappatronItems(_ items: [[String: Any]]) {
-        UIPasteboard.general.setItems(
-            items,
-            options: [
-                .localOnly: true,
-                .expirationDate: Date(timeIntervalSinceNow: 8 * 60 * 60)
-            ]
-        )
+        let options: [UIPasteboard.OptionsKey: Any] = [
+            .localOnly: true,
+            .expirationDate: Date(timeIntervalSinceNow: 8 * 60 * 60)
+        ]
+
+        availablePasteboards(createBridge: true).forEach { pasteboard in
+            pasteboard.setItems(items, options: options)
+        }
     }
 
     private func yappatronItems(excludingRoles excludedRoles: Set<String>) -> [[String: Any]] {
-        UIPasteboard.general.items.filter { item in
+        let items = availablePasteboards(createBridge: true).flatMap(\.items).filter { item in
             guard let metadata = Self.metadata(from: item),
                   metadata.source == YappatronPasteboard.source else {
                 return false
@@ -290,10 +294,12 @@ final class SharedTranscriptStore {
 
             return !excludedRoles.contains(metadata.role)
         }
+
+        return Self.deduplicated(items)
     }
 
     private func latestItem(role: String) -> [String: Any]? {
-        UIPasteboard.general.items
+        yappatronItems(excludingRoles: [])
             .filter { item in
                 guard let metadata = Self.metadata(from: item),
                       metadata.source == YappatronPasteboard.source else {
@@ -306,6 +312,15 @@ final class SharedTranscriptStore {
                 (Self.metadata(from: lhs)?.updatedAt ?? 0) < (Self.metadata(from: rhs)?.updatedAt ?? 0)
             }
             .last
+    }
+
+    private func availablePasteboards(createBridge: Bool) -> [UIPasteboard] {
+        var pasteboards: [UIPasteboard] = []
+        if let bridge = UIPasteboard(name: YappatronPasteboard.bridgeName, create: createBridge) {
+            pasteboards.append(bridge)
+        }
+        pasteboards.append(.general)
+        return pasteboards
     }
 
     private static func transcript(from item: [String: Any], role: String) -> SharedTranscript? {
@@ -340,5 +355,22 @@ final class SharedTranscriptStore {
         YappatronPasteboard.textTypes
             .compactMap { item[$0] as? String }
             .first ?? ""
+    }
+
+    private static func deduplicated(_ items: [[String: Any]]) -> [[String: Any]] {
+        var seen = Set<String>()
+        return items.filter { item in
+            guard let metadata = metadata(from: item) else {
+                return false
+            }
+
+            let key = [
+                metadata.role,
+                String(metadata.updatedAt),
+                metadata.command ?? "",
+                text(from: item)
+            ].joined(separator: "|")
+            return seen.insert(key).inserted
+        }
     }
 }

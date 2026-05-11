@@ -22,3 +22,7 @@ User clarified the target iPhone workflow by comparing against Spokenly: the Yap
 - Confirm the pasteboard bridge remains reliable with the keyboard's full-access setting enabled.
 - Longer-term: replace the pasteboard bridge with an App Group container under a paid Apple Developer account for cleaner companion-app/keyboard state sharing.
 - Add a real session/history model for meeting and lecture transcripts after the live-input loop feels solid.
+
+## Hotfix
+
+Live test found that the keyboard still showed `Start Dictation` while the app was already listening, and tapping start gave no visible feedback. Patched the keyboard to remove the redundant globe key, darken the keyboard background toward iOS dark-keyboard gray, show explicit transient launch/status text, attempt a responder-chain URL open fallback, and mirror the Yappatron bridge through a named pasteboard in addition to the general pasteboard. If the keyboard reports `Allow Full Access for live dictation`, the OS is blocking the app/keyboard bridge until full access is enabled for the custom keyboard.

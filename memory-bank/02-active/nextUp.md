@@ -58,6 +58,7 @@ Pairs naturally with the broader "build this into the agent product" plan — on
    - Type-anywhere keyboard flow: confirm queued chunks insert in order and no earlier utterances are dropped
    - Spokenly-style keyboard dictation flow: tap `Start Dictation`, launch Yappatron, start recording, swipe back, and confirm live transcript deltas stream into the active input
    - Confirm checkmark finish does not duplicate finalized chunks after live streaming has already inserted them
+   - If keyboard shows `Allow Full Access for live dictation`, enable Full Access for the Yappatron keyboard and retest the named/general pasteboard bridge
    - Trust the refreshed Personal Team profile on device if direct launch is blocked after install
    - Eventually a paid Apple Developer Program path with App Group entitlement for cleaner companion-app/keyboard sharing
 
