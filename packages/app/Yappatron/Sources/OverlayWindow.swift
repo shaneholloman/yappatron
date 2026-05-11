@@ -96,7 +96,7 @@ struct OverlayView: View {
                 ConcentricRingsOrbView(colors: orbColors, speed: orbSpeed)
                     .frame(width: 80, height: 80)
             case .bottomLine:
-                BottomLineIndicatorView(colors: orbColors, speed: orbSpeed, isSpeaking: viewModel.status == .speaking)
+                BottomLineIndicatorView(colors: orbColors, speed: orbSpeed, isSpeaking: viewModel.isSpeaking)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -181,22 +181,22 @@ struct BottomLineIndicatorView: View {
             let time = timeline.date.timeIntervalSinceReferenceDate
 
             GeometryReader { geometry in
-                let pulse = (sin(time * speed * (isSpeaking ? 4.2 : 2.1)) + 1) / 2
-                let phase = CGFloat(time * speed * (isSpeaking ? 3.4 : 1.7))
-                let thickness: CGFloat = isSpeaking ? 8.0 + CGFloat(pulse) * 2.0 : 6.0 + CGFloat(pulse) * 1.2
-                let amplitude: CGFloat = isSpeaking ? 2.2 : 0.9
+                let pulse = isSpeaking ? (sin(time * speed * 4.0) + 1) / 2 : 0
+                let phase = isSpeaking ? CGFloat(time * speed * 2.8) : 0
+                let thickness: CGFloat = isSpeaking ? 7.0 + CGFloat(pulse) * 1.6 : 6.0
+                let amplitude: CGFloat = isSpeaking ? 1.2 : 0
 
                 WigglyBottomBarShape(phase: phase, amplitude: amplitude, thickness: thickness)
                     .fill(
                         LinearGradient(
-                            colors: colors.map { $0.opacity(isSpeaking ? 0.95 : 0.78) },
+                            colors: colors.map { $0.opacity(isSpeaking ? 0.92 : 0.72) },
                             startPoint: .leading,
                             endPoint: .trailing
                         )
                     )
                     .frame(width: geometry.size.width, height: geometry.size.height)
-                    .shadow(color: colors.first?.opacity(isSpeaking ? 0.9 : 0.55) ?? .green.opacity(0.6), radius: isSpeaking ? 10 : 7, x: 0, y: 0)
-                    .offset(y: CGFloat(sin(time * speed * 1.6)) * (isSpeaking ? 1.1 : 0.4))
+                    .shadow(color: colors.first?.opacity(isSpeaking ? 0.82 : 0.5) ?? .green.opacity(0.6), radius: isSpeaking ? 9 : 6, x: 0, y: 0)
+                    .offset(y: isSpeaking ? CGFloat(sin(time * speed * 1.4)) * 0.7 : 0)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 2)
