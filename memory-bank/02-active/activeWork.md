@@ -23,7 +23,7 @@ Shipped behavior:
 
 Validation follow-ups:
 - Smoke-test the locked-window outline on multiple displays and with moved/resized windows.
-- Bottom indicator motion is now amplitude-reactive, but still approximate. Tune the RMS noise floor/full-scale mapping after live use if normal speech is too subtle or room noise moves it too much.
+- Bottom indicator live test passed: RMS-reactive motion hits the intended feel. Keep the current calibration unless future room-noise or subtle-speech tests prove otherwise.
 - Re-test `Press Enter After Speech` in Codex. A 120ms settle delay was added before Return, but this still needs live confirmation.
 
 Next iteration should prioritize any remaining reliability issues found in live use.
