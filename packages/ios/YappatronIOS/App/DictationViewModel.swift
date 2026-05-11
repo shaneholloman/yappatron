@@ -112,6 +112,8 @@ final class DictationViewModel: ObservableObject {
     private var audioSendTask: Task<Void, Never>?
     private var localDeliveryTask: Task<Void, Never>?
     private var keyboardCommandTask: Task<Void, Never>?
+    private var recordingBackgroundTask: UIBackgroundTaskIdentifier = .invalid
+    private var notificationObservers: [NSObjectProtocol] = []
     private var lastKeyboardCommandAt: TimeInterval = 0
     private var lastDictationStatePublishedAt: TimeInterval = 0
     private var lastDeliveredLocalTranscript = ""
@@ -141,6 +143,7 @@ final class DictationViewModel: ObservableObject {
         streamToWebhook = UserDefaults.standard.bool(forKey: DefaultsKeys.streamToWebhook)
         sharedStore.pressReturnAfterInsert = pressReturnAfterSend
         publishDictationState()
+        configureLifecycleObservers()
 
         webhookClient.onResult = { [weak self] result in
             Task { @MainActor in
@@ -167,6 +170,58 @@ final class DictationViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    deinit {
+        for observer in notificationObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    private func configureLifecycleObservers() {
+        let center = NotificationCenter.default
+        notificationObservers.append(center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.beginRecordingBackgroundTaskIfNeeded()
+            }
+        })
+
+        notificationObservers.append(center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.endRecordingBackgroundTask()
+                self?.publishDictationState()
+            }
+        })
+    }
+
+    private func beginRecordingBackgroundTaskIfNeeded() {
+        guard isRecording, recordingBackgroundTask == .invalid else {
+            return
+        }
+
+        publishDictationState()
+        recordingBackgroundTask = UIApplication.shared.beginBackgroundTask(withName: "YappatronDictation") { [weak self] in
+            Task { @MainActor in
+                self?.endRecordingBackgroundTask()
+            }
+        }
+    }
+
+    private func endRecordingBackgroundTask() {
+        guard recordingBackgroundTask != .invalid else {
+            return
+        }
+
+        UIApplication.shared.endBackgroundTask(recordingBackgroundTask)
+        recordingBackgroundTask = .invalid
     }
 
     var activeOutputLabels: [String] {
@@ -311,6 +366,7 @@ final class DictationViewModel: ObservableObject {
 
         status = .finishing
         UIApplication.shared.isIdleTimerDisabled = false
+        endRecordingBackgroundTask()
         publishDictationState()
 
         if let localRecognizer {
@@ -558,6 +614,7 @@ final class DictationViewModel: ObservableObject {
 
     private func cleanUpRecording() async {
         UIApplication.shared.isIdleTimerDisabled = false
+        endRecordingBackgroundTask()
         stopKeyboardCommandPolling()
         localDeliveryTask?.cancel()
         localDeliveryTask = nil

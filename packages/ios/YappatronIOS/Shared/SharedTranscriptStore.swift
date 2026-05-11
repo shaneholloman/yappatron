@@ -10,7 +10,7 @@ private enum YappatronPasteboard {
     static let bridgeName = UIPasteboard.Name("com.yappatron.ios.bridge")
     static let metadataType = "com.yappatron.transcript.metadata"
     static let maxQueuedItems = 24
-    static let recordingStateStaleAfter: TimeInterval = 3
+    static let recordingStateStaleAfter: TimeInterval = 12
     static let textTypes = [
         UTType.utf8PlainText.identifier,
         UTType.plainText.identifier

@@ -38,6 +38,7 @@ final class KeyboardViewController: UIInputViewController {
     private enum LocalKeys {
         static let lastInsertedUpdatedAt = "lastAutoInsertedUpdatedAt"
         static let lastStreamedLiveTranscript = "lastStreamedLiveTranscript"
+        static let activeDictationUntil = "activeDictationUntil"
     }
 
     override func viewDidLoad() {
@@ -79,11 +80,7 @@ final class KeyboardViewController: UIInputViewController {
 
         micButton.configuration = .filled()
         micButton.configuration?.image = UIImage(systemName: "mic.fill")
-        micButton.configuration?.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 8, bottom: 6, trailing: 8)
-        micButton.configuration?.imagePadding = 5
-        micButton.configuration?.title = "Start"
-        micButton.titleLabel?.adjustsFontSizeToFitWidth = true
-        micButton.titleLabel?.minimumScaleFactor = 0.75
+        micButton.configuration?.contentInsets = NSDirectionalEdgeInsets(top: 6, leading: 5, bottom: 6, trailing: 5)
         micButton.addTarget(self, action: #selector(micButtonTapped), for: .touchUpInside)
         micButton.accessibilityLabel = "Start dictation"
 
@@ -141,7 +138,7 @@ final class KeyboardViewController: UIInputViewController {
         buttonRow.distribution = .fill
         buttonRow.spacing = 4
 
-        startButtonContainer.widthAnchor.constraint(equalToConstant: 80).isActive = true
+        startButtonContainer.widthAnchor.constraint(equalToConstant: 38).isActive = true
         historyButton.widthAnchor.constraint(equalToConstant: 32).isActive = true
         insertButton.widthAnchor.constraint(equalToConstant: 34).isActive = true
         undoButton.widthAnchor.constraint(equalToConstant: 30).isActive = true
@@ -210,8 +207,9 @@ final class KeyboardViewController: UIInputViewController {
         let lastInsertedAt = localDefaults.double(forKey: LocalKeys.lastInsertedUpdatedAt)
         pendingTranscripts = transcriptStore.keyboardTranscripts(after: lastInsertedAt)
         let hadStreamedLiveText = !lastStreamedLiveTranscript.isEmpty
-        streamLiveTranscriptIfNeeded()
-        if dictationState.isRecording {
+        let keyboardDictationActive = isKeyboardDictationActive
+        streamLiveTranscriptIfNeeded(allowStaleRecordingState: keyboardDictationActive)
+        if dictationState.isRecording || keyboardDictationActive {
             clearTransientStatus()
             reconcilePendingTranscriptsDuringRecording()
         } else if hadStreamedLiveText {
@@ -227,7 +225,7 @@ final class KeyboardViewController: UIInputViewController {
         } else if !hasFullAccess {
             transcriptLabel.text = "Enable Full Access for live dictation"
         } else if text.isEmpty {
-            if dictationState.isRecording {
+            if dictationState.isRecording || keyboardDictationActive {
                 transcriptLabel.text = "Listening"
             } else if pendingTranscripts.isEmpty {
                 transcriptLabel.text = "Start Dictation"
@@ -236,7 +234,7 @@ final class KeyboardViewController: UIInputViewController {
             }
         } else if showingHistory && pendingTranscripts.count > 1 {
             transcriptLabel.text = "\(pendingTranscripts.count) snippets\n\(text)"
-        } else if dictationState.isRecording {
+        } else if dictationState.isRecording || keyboardDictationActive {
             transcriptLabel.text = text
         } else if pendingTranscripts.count > 1 {
             transcriptLabel.text = "\(pendingTranscripts.count) chunks ready\n\(text)"
@@ -246,12 +244,11 @@ final class KeyboardViewController: UIInputViewController {
             transcriptLabel.text = text
         }
         transcriptLabel.textColor = text.isEmpty || !hasFullAccess ? secondaryTextColor : activeTextColor
-        micButton.configuration?.title = dictationState.isRecording ? "Rec" : "Start"
-        micButton.configuration?.image = UIImage(systemName: dictationState.isRecording ? "waveform" : "mic.fill")
+        micButton.configuration?.image = UIImage(systemName: (dictationState.isRecording || keyboardDictationActive) ? "waveform" : "mic.fill")
         micButton.isEnabled = false
-        micButton.isHidden = !dictationState.isRecording
-        startLinkController?.view.isHidden = dictationState.isRecording
-        insertButton.isEnabled = dictationState.isRecording || !pendingTranscripts.isEmpty || !text.isEmpty
+        micButton.isHidden = !(dictationState.isRecording || keyboardDictationActive)
+        startLinkController?.view.isHidden = dictationState.isRecording || keyboardDictationActive
+        insertButton.isEnabled = dictationState.isRecording || keyboardDictationActive || !pendingTranscripts.isEmpty || !text.isEmpty
         historyButton.isEnabled = hasFullAccess
     }
 
@@ -310,9 +307,10 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     @objc private func insertButtonTapped() {
-        if dictationState.isRecording {
+        if dictationState.isRecording || isKeyboardDictationActive {
             insertLiveRemainder()
             markPendingTranscriptsInserted()
+            localDefaults.set(0, forKey: LocalKeys.activeDictationUntil)
             transcriptStore.saveKeyboardCommand("stop")
             return
         }
@@ -339,6 +337,7 @@ final class KeyboardViewController: UIInputViewController {
 
     private func prepareStartDictationRequest() {
         showTransientStatus(hasFullAccess ? "Opening Yappatron" : "Enable Full Access, then open Yappatron")
+        localDefaults.set(Date().addingTimeInterval(10 * 60).timeIntervalSince1970, forKey: LocalKeys.activeDictationUntil)
         transcriptStore.saveKeyboardCommand("start")
         guard let url = URL(string: "yappatron://dictation/start") else {
             return
@@ -346,6 +345,10 @@ final class KeyboardViewController: UIInputViewController {
 
         _ = openURLThroughResponderChain(url)
         openURLThroughWebView(url)
+    }
+
+    private var isKeyboardDictationActive: Bool {
+        localDefaults.double(forKey: LocalKeys.activeDictationUntil) > Date().timeIntervalSince1970
     }
 
     private func openURLThroughWebView(_ url: URL) {
@@ -397,8 +400,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     @discardableResult
-    private func streamLiveTranscriptIfNeeded() -> Bool {
-        guard dictationState.isRecording else {
+    private func streamLiveTranscriptIfNeeded(allowStaleRecordingState: Bool = false) -> Bool {
+        guard dictationState.isRecording || allowStaleRecordingState else {
             lastStreamedLiveTranscript = ""
             localDefaults.set("", forKey: LocalKeys.lastStreamedLiveTranscript)
             return false
@@ -624,12 +627,8 @@ private struct KeyboardStartLinkView: View {
 
     var body: some View {
         Link(destination: url) {
-            HStack(spacing: 5) {
-                Image(systemName: "mic.fill")
-                    .font(.caption.weight(.semibold))
-                Text("Start")
-                    .font(.footnote.weight(.semibold))
-            }
+            Image(systemName: "mic.fill")
+                .font(.caption.weight(.semibold))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .foregroundStyle(.white)
             .background(Color.accentColor)
