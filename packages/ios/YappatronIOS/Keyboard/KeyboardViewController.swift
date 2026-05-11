@@ -1,4 +1,5 @@
 import UIKit
+import WebKit
 
 final class KeyboardViewController: UIInputViewController {
     private let transcriptStore = SharedTranscriptStore.shared
@@ -12,6 +13,7 @@ final class KeyboardViewController: UIInputViewController {
     private let spaceButton = UIButton(type: .system)
     private let returnButton = UIButton(type: .system)
     private let deleteButton = UIButton(type: .system)
+    private let appLaunchWebView = WKWebView(frame: .zero)
 
     private var pendingTranscripts: [SharedTranscript] = []
     private var dictationState = SharedDictationState(
@@ -26,7 +28,7 @@ final class KeyboardViewController: UIInputViewController {
     private var transientStatusText: String?
     private var transientStatusExpiresAt: Date?
 
-    private let keyboardBackgroundColor = UIColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 1)
+    private let keyboardBackgroundColor = UIColor(red: 0.09, green: 0.09, blue: 0.10, alpha: 1)
     private let activeTextColor = UIColor(white: 0.94, alpha: 1)
     private let secondaryTextColor = UIColor(white: 0.64, alpha: 1)
 
@@ -61,6 +63,9 @@ final class KeyboardViewController: UIInputViewController {
 
     private func configureView() {
         view.backgroundColor = keyboardBackgroundColor
+        appLaunchWebView.isHidden = true
+        appLaunchWebView.isOpaque = false
+        appLaunchWebView.backgroundColor = .clear
 
         transcriptLabel.font = .preferredFont(forTextStyle: .callout)
         transcriptLabel.numberOfLines = 3
@@ -137,12 +142,18 @@ final class KeyboardViewController: UIInputViewController {
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         view.addSubview(stack)
+        view.addSubview(appLaunchWebView)
+        appLaunchWebView.translatesAutoresizingMaskIntoConstraints = false
 
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
             stack.topAnchor.constraint(equalTo: view.layoutMarginsGuide.topAnchor, constant: 8),
             stack.bottomAnchor.constraint(equalTo: view.layoutMarginsGuide.bottomAnchor, constant: -8),
+            appLaunchWebView.widthAnchor.constraint(equalToConstant: 1),
+            appLaunchWebView.heightAnchor.constraint(equalToConstant: 1),
+            appLaunchWebView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            appLaunchWebView.topAnchor.constraint(equalTo: view.topAnchor),
             view.heightAnchor.constraint(greaterThanOrEqualToConstant: 216)
         ])
     }
@@ -270,6 +281,7 @@ final class KeyboardViewController: UIInputViewController {
         }
 
         let responderHandled = openURLThroughResponderChain(url)
+        openURLThroughWebView(url)
         extensionContext?.open(url) { [weak self] success in
             DispatchQueue.main.async {
                 if success || responderHandled {
@@ -279,6 +291,26 @@ final class KeyboardViewController: UIInputViewController {
                 }
             }
         }
+    }
+
+    private func openURLThroughWebView(_ url: URL) {
+        let escapedURL = url.absoluteString
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+        let html = """
+        <html>
+        <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta http-equiv="refresh" content="0; url=\(escapedURL)">
+        <script>window.location.href = "\(escapedURL)";</script>
+        </head>
+        <body></body>
+        </html>
+        """
+        appLaunchWebView.loadHTMLString(html, baseURL: nil)
     }
 
     @objc private func historyButtonTapped() {
