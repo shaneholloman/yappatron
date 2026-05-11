@@ -82,6 +82,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         }
     }
 
+    var alwaysShowBottomBar: Bool {
+        get {
+            let key = "alwaysShowBottomBar"
+            if UserDefaults.standard.object(forKey: key) == nil {
+                return true
+            }
+
+            return UserDefaults.standard.bool(forKey: key)
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "alwaysShowBottomBar")
+        }
+    }
+
     // Combine
     private var cancellables = Set<AnyCancellable>()
 
@@ -338,7 +352,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
                 // Auto-hide after a delay
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
-                if self?.overlayWindow?.overlayViewModel.isSpeaking == false {
+                if self?.overlayWindow?.overlayViewModel.isSpeaking == false,
+                   self?.shouldPersistBottomBar() != true {
                     self?.overlayWindow?.orderOut(nil)
                 }
             }
@@ -446,6 +461,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         case .error(let msg):
             overlayWindow?.overlayViewModel.status = .error(msg)
         }
+
+        syncPersistentBottomBarVisibility()
     }
 
     // MARK: - Status Bar
@@ -643,6 +660,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
         orbStyleItem.submenu = orbStyleMenu
         menu.addItem(orbStyleItem)
 
+        let alwaysShowBottomBarItem = NSMenuItem(title: "Always Show Bottom Bar", action: #selector(toggleAlwaysShowBottomBar), keyEquivalent: "")
+        alwaysShowBottomBarItem.state = alwaysShowBottomBar ? .on : .off
+        menu.addItem(alwaysShowBottomBarItem)
+
         menu.addItem(NSMenuItem.separator())
 
         if overlayWindow?.isVisible == true {
@@ -731,6 +752,31 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     func showOverlay() {
         overlayWindow?.orderFrontRegardless()
         overlayWindow?.positionAtBottom()
+    }
+
+    func shouldPersistBottomBar() -> Bool {
+        guard alwaysShowBottomBar,
+              overlayWindow?.overlayViewModel.orbStyle == .bottomLine,
+              !isPaused else {
+            return false
+        }
+
+        switch engine.status {
+        case .ready, .listening:
+            return true
+        case .initializing, .downloadingModels, .error:
+            return false
+        }
+    }
+
+    func syncPersistentBottomBarVisibility() {
+        guard overlayWindow != nil else { return }
+
+        if shouldPersistBottomBar() {
+            showOverlay()
+        } else if alwaysShowBottomBar, overlayWindow?.overlayViewModel.orbStyle == .bottomLine {
+            overlayWindow?.orderOut(nil)
+        }
     }
 
     // MARK: - Hot Keys
@@ -955,6 +1001,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
 
     @objc func toggleEnterAction() {
         pressEnterAfterSpeech.toggle()
+    }
+
+    @objc func toggleAlwaysShowBottomBar() {
+        alwaysShowBottomBar.toggle()
+        if alwaysShowBottomBar {
+            syncPersistentBottomBarVisibility()
+        } else if overlayWindow?.overlayViewModel.orbStyle == .bottomLine,
+                  overlayWindow?.overlayViewModel.isSpeaking == false {
+            overlayWindow?.orderOut(nil)
+        }
     }
 
     @objc func toggleInputFocusLockAction() {
@@ -1219,6 +1275,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
             indicatorStyle = style
             overlayWindow?.overlayViewModel.orbStyle = style
             overlayWindow?.positionAtBottom()
+            syncPersistentBottomBarVisibility()
         }
     }
 
@@ -1227,6 +1284,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, ObservableObject {
     }
 
     @objc func hideOverlayAction() {
+        if overlayWindow?.overlayViewModel.orbStyle == .bottomLine {
+            alwaysShowBottomBar = false
+        }
         overlayWindow?.orderOut(nil)
     }
 
@@ -1274,6 +1334,7 @@ struct SettingsView: View {
             Section("Dictation") {
                 LabeledContent("Mode", value: DictationMode.current.title)
                 LabeledContent("Indicator", value: UserDefaults.standard.string(forKey: "indicatorStyle") ?? OverlayViewModel.OrbStyle.voronoi.rawValue)
+                LabeledContent("Always Show Bottom Bar", value: UserDefaults.standard.object(forKey: "alwaysShowBottomBar") == nil || UserDefaults.standard.bool(forKey: "alwaysShowBottomBar") ? "On" : "Off")
                 Text("Change mode via the menu bar right-click menu")
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -1287,6 +1348,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 390, height: 400)
+        .frame(width: 390, height: 420)
     }
 }
