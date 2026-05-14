@@ -41,6 +41,9 @@ disappeared or stalled, even if it eventually settled correctly.
 
 - plain utterance text stays as the final text prefix,
 - `formatSpeakerSuffix` appends `\n[Speaker]\n\n`,
+- when `Press Enter After Speech` is enabled, the suffix trims the final
+  blank separator and uses `\n[Speaker]` before submit, since a final
+  auto-submitted chat message does not need the extra two-newline gap,
 - multiple speaker runs collapse to a bracketed speaker sequence such as
   `[Alex -> Callie]`,
 - `InputSimulator.typeString` pastes any multiline string instead of

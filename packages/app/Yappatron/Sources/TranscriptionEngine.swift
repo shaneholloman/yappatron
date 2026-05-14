@@ -419,7 +419,9 @@ class TranscriptionEngine: ObservableObject {
         }
 
         guard !labels.isEmpty else { return "" }
-        return "\n[\(labels.joined(separator: " -> "))]\n\n"
+        let speakerLine = "\n[\(labels.joined(separator: " -> "))]"
+        let willSubmitUtterance = UserDefaults.standard.bool(forKey: "pressEnterAfterSpeech")
+        return willSubmitUtterance ? speakerLine : "\(speakerLine)\n\n"
     }
 
     private func handleFinalTranscription(_ final: String) {

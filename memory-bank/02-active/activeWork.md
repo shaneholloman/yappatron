@@ -152,7 +152,10 @@ speaker runs in one finalized utterance append one bracketed sequence
 line such as `[Alex -> Callie]`. Follow-up the same night: multiline
 suffixes are pasted as text instead of emitted as Return keystrokes, so
 chat inputs do not split the utterance and attribution into separate
-messages.
+messages. Second follow-up: when `Press Enter After Speech` is enabled,
+the final auto-submitted utterance uses `\n[Speaker]` without the extra
+two-newline separator, because there is no next utterance in that
+message.
 
 Validated easy-mode (quiet 1:1) cleanly. Hard-mode (3+ speakers, ambient noise) recoverable but not perfect — fragmentation is fine since override matches against voiceprint not ID, occasional phantom-speaker noise from overlap remains.
 
